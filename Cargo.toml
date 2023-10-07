@@ -1,0 +1,7 @@
+[package]
+name = "swua"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+inkwell = { version = "0.2.0", features = ["llvm16-0"] }
