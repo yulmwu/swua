@@ -1,14 +1,20 @@
-use inkwell::{context::Context, types::BasicMetadataTypeEnum, AddressSpace};
+use inkwell::{
+    context::Context,
+    types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum},
+    AddressSpace,
+};
 
+#[derive(Debug, Clone)]
 pub enum Ty {
     Int,
     Float,
     String,
     Boolean,
+    Array(Box<Ty>),
 }
 
 impl Ty {
-    pub fn to_llvm_type<'a>(&self, context: &'a Context) -> BasicMetadataTypeEnum<'a> {
+    pub fn to_llvm_type_meta<'a>(&self, context: &'a Context) -> BasicMetadataTypeEnum<'a> {
         match self {
             Ty::Int => BasicMetadataTypeEnum::IntType(context.i64_type()),
             Ty::Float => BasicMetadataTypeEnum::FloatType(context.f64_type()),
@@ -16,16 +22,31 @@ impl Ty {
                 context.i8_type().ptr_type(AddressSpace::from(0)),
             ),
             Ty::Boolean => BasicMetadataTypeEnum::IntType(context.bool_type()),
+            Ty::Array(ty) => {
+                BasicMetadataTypeEnum::ArrayType(ty.to_llvm_type_meta(context).into_array_type())
+            }
+        }
+    }
+
+    pub fn to_llvm_type<'a>(&self, context: &'a Context) -> BasicTypeEnum<'a> {
+        match self {
+            Ty::Int => context.i64_type().into(),
+            Ty::Float => context.f64_type().into(),
+            Ty::String => context.i8_type().ptr_type(AddressSpace::from(0)).into(),
+            Ty::Boolean => context.bool_type().into(),
+            Ty::Array(ty) => ty.to_llvm_type(context).array_type(0).into(),
         }
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Statements {
     Expression(Expression),
     Declaration(Declaration),
     Return(Expression),
 }
 
+#[derive(Debug, Clone)]
 pub enum Expression {
     Literal(LiteralExpression),
     Identifier(IdentifierExpression),
@@ -33,38 +54,46 @@ pub enum Expression {
     Infix(InfixExpression),
 }
 
+#[derive(Debug, Clone)]
 pub enum Declaration {
     Variable(VariableDeclaration),
     Function(FunctionDeclaration),
 }
 
+#[derive(Debug, Clone)]
 pub enum LiteralExpression {
     Integer(i64),
     Float(f64),
     String(String),
     Boolean(bool),
+    Array(Vec<Expression>, Ty),
 }
 
+#[derive(Debug, Clone)]
 pub struct IdentifierExpression {
     pub name: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct CallExpression {
     pub callee: Box<Expression>,
     pub arguments: Vec<Expression>,
 }
 
+#[derive(Debug, Clone)]
 pub struct InfixExpression {
     pub operator: String,
     pub left: Box<Expression>,
     pub right: Box<Expression>,
 }
 
+#[derive(Debug, Clone)]
 pub struct VariableDeclaration {
     pub name: String,
     pub initializer: Option<Expression>,
 }
 
+#[derive(Debug, Clone)]
 pub struct FunctionDeclaration {
     pub name: String,
     pub parameters: Vec<(String, Ty)>,
@@ -156,5 +185,10 @@ pub mod ast_helper {
     #[inline(always)]
     pub fn boolean(b: bool) -> LiteralExpression {
         LiteralExpression::Boolean(b)
+    }
+
+    #[inline(always)]
+    pub fn array(elements: Vec<Expression>, ty: Ty) -> LiteralExpression {
+        LiteralExpression::Array(elements, ty)
     }
 }
