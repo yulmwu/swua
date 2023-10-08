@@ -5,3 +5,4 @@ target
 wasm/pkg/package.json
 wasm/pkg/wasm_bg.wasm.d.ts
 wasm/pkg/wasm.d.ts
+build
