@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use inkwell::{context::Context, OptimizationLevel};
 use std::fs;
 
@@ -8,11 +6,6 @@ mod codegen;
 
 use ast::*;
 use codegen::*;
-
-#[link(name = "swua")]
-extern "C" {
-    fn print(x: i64) -> i64;
-}
 
 fn main() {
     let context = Context::create();
@@ -30,8 +23,10 @@ fn main() {
             vec![],
             vec![
                 var_init("a", lit(int(10))),
-                expr(call(ident("printf"), vec![lit(string("Hello, World!"))])),
-                expr(call(ident("print"), vec![ident("a")])),
+                expr(call(
+                    ident("print_str"),
+                    vec![call(ident("print_str"), vec![lit(string("Hello, World!"))])],
+                )),
                 ret(call(ident("add"), vec![ident("a"), lit(int(10))])),
             ],
         ),
@@ -39,7 +34,7 @@ fn main() {
 
     compiler.compile_module("main".to_string(), program);
 
-    println!("{}", compiler.module.print_to_string().to_string());
+    // println!("{}", compiler.module.print_to_string().to_string());
     fs::write(
         "./build/main.ll",
         compiler.module.print_to_string().to_string(),

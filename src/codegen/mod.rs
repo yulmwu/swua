@@ -1,11 +1,13 @@
+pub mod builtins;
+
 use crate::ast::*;
+use builtins::add_builtins;
 use inkwell::{
     builder::Builder,
     context::Context,
-    module::{Linkage, Module},
-    types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum},
+    module::Module,
+    types::{BasicType, BasicTypeEnum},
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue},
-    AddressSpace,
 };
 use std::collections::HashMap;
 
@@ -23,7 +25,7 @@ impl<'ctx> Compiler<'ctx> {
         let module = context.create_module(name);
 
         Compiler {
-            context: &context,
+            context,
             builder,
             module,
             variables: HashMap::new(),
@@ -33,27 +35,7 @@ impl<'ctx> Compiler<'ctx> {
     pub fn compile_module(&mut self, name: String, program: Vec<Statements>) {
         self.module = self.context.create_module(name.as_str());
 
-        // built in functions
-        self.module.add_function(
-            "printf",
-            self.context.i64_type().fn_type(
-                vec![BasicMetadataTypeEnum::PointerType(
-                    self.context.i8_type().ptr_type(AddressSpace::from(0)),
-                )]
-                .as_slice(),
-                true,
-            ),
-            Some(Linkage::External),
-        );
-
-        self.module.add_function(
-            "print",
-            self.context.i64_type().fn_type(
-                vec![BasicMetadataTypeEnum::IntType(self.context.i64_type())].as_slice(),
-                true,
-            ),
-            Some(Linkage::External),
-        );
+        add_builtins(&self.module, self.context);
 
         for stmt in program {
             match stmt {

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use inkwell::{
     context::Context,
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum},
