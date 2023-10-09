@@ -32,23 +32,22 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    pub fn compile_module(&mut self, name: String, program: Vec<Statements>) {
+    pub fn compile_module(&mut self, name: String, program: Program) {
         self.module = self.context.create_module(name.as_str());
 
         add_builtins(&self.module, self.context);
 
         for stmt in program {
             match stmt {
-                Statements::Declaration(decl) => match decl {
-                    Declaration::Variable(var) => self.compile_variable_declaration(var),
-                    Declaration::Function(func) => self.compile_function_declaration(func),
-                },
-                Statements::Return(expr) => {
-                    self.compile_expression(expr);
+                Statement::LetStatement(stmt) => self.compile_let_statement(stmt),
+                Statement::FunctionDeclaration(func) => self.compile_function_declaration(func),
+                Statement::ReturnStatement(expr) => {
+                    self.compile_expression(expr.value);
                 }
-                Statements::Expression(expr) => {
-                    self.compile_expression(expr);
+                Statement::ExpressionStatement(expr) => {
+                    self.compile_expression(expr.expression);
                 }
+                _ => unimplemented!(),
             }
         }
     }
@@ -56,15 +55,15 @@ impl<'ctx> Compiler<'ctx> {
     pub fn compile_expression(&mut self, expr: Expression) -> BasicValueEnum<'ctx> {
         match expr {
             Expression::Literal(lit) => self.compile_literal_expression(lit),
-            Expression::Identifier(ident) => self.compile_identifier_expression(ident),
-            Expression::Call(call) => self.compile_call_expression(call),
-            Expression::Infix(infix) => self.compile_infix_expression(infix),
+            Expression::CallExpression(call) => self.compile_call_expression(call),
+            Expression::InfixExpression(infix) => self.compile_infix_expression(infix),
+            _ => unimplemented!(),
         }
     }
 
-    fn compile_variable_declaration(&mut self, var: VariableDeclaration) {
-        let name = var.name;
-        let initializer = var.initializer;
+    fn compile_let_statement(&mut self, stmt: LetStatement) {
+        let name = stmt.identifier.value;
+        let initializer = stmt.value;
 
         let alloca = self
             .builder
@@ -79,13 +78,13 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_function_declaration(&mut self, func: FunctionDeclaration) {
-        let name = func.name;
-        let parameters = func.parameters;
-        let body = func.body;
+        let name = func.identifier.value;
+        let parameters = func.function.parameters;
+        let body = func.function.body;
 
         let parameters_ty = parameters
             .iter()
-            .map(|param| param.1.to_llvm_type_meta(self.context))
+            .map(|param| param.ty.kind.to_llvm_type_meta(self.context))
             .collect::<Vec<_>>();
         let function_type = self
             .context
@@ -101,60 +100,65 @@ impl<'ctx> Compiler<'ctx> {
         for (i, param) in function.get_param_iter().enumerate() {
             let alloca = self
                 .builder
-                .build_alloca(self.context.i64_type(), parameters[i].0.as_str());
+                .build_alloca(self.context.i64_type(), &parameters[i].identifier.value);
 
             self.builder.build_store(alloca, param);
 
-            self.variables.insert(parameters[i].0.clone(), alloca);
+            self.variables
+                .insert(parameters[i].identifier.value.clone(), alloca);
         }
 
-        for stmt in body {
+        for stmt in body.statements {
             match stmt {
-                Statements::Declaration(decl) => match decl {
-                    Declaration::Variable(var) => self.compile_variable_declaration(var),
-                    Declaration::Function(func) => self.compile_function_declaration(func),
-                },
-                Statements::Return(expr) => {
-                    let value = self.compile_expression(expr);
+                Statement::LetStatement(stmt) => self.compile_let_statement(stmt),
+                Statement::FunctionDeclaration(func) => self.compile_function_declaration(func),
+                Statement::ReturnStatement(expr) => {
+                    let value = self.compile_expression(expr.value);
                     self.builder.build_return(Some(&value));
                     return;
                 }
-                Statements::Expression(expr) => {
-                    self.compile_expression(expr);
+                Statement::ExpressionStatement(expr) => {
+                    self.compile_expression(expr.expression);
                 }
+                _ => unimplemented!(),
             }
         }
 
         self.builder.build_return(None);
     }
 
-    fn compile_literal_expression(&mut self, lit: LiteralExpression) -> BasicValueEnum<'ctx> {
+    fn compile_literal_expression(&mut self, lit: Literal) -> BasicValueEnum<'ctx> {
         match lit {
-            LiteralExpression::Integer(i) => self
+            Literal::Identifier(ident) => self.compile_identifier_expression(ident),
+            Literal::Int(i) => self
                 .context
                 .i64_type()
-                .const_int(i as u64, false)
+                .const_int(i.value as u64, false)
                 .as_basic_value_enum(),
-            LiteralExpression::Float(f) => {
-                self.context.f64_type().const_float(f).as_basic_value_enum()
-            }
-            LiteralExpression::String(s) => self
+            Literal::Float(f) => self
+                .context
+                .f64_type()
+                .const_float(f.value)
+                .as_basic_value_enum(),
+            Literal::String(s) => self
                 .builder
-                .build_global_string_ptr(s.as_str(), ".str")
+                .build_global_string_ptr(s.value.as_str(), ".str")
                 .as_basic_value_enum(),
-            LiteralExpression::Boolean(b) => self
+            Literal::Boolean(b) => self
                 .context
                 .bool_type()
-                .const_int(b as u64, false)
+                .const_int(b.value as u64, false)
                 .as_basic_value_enum(),
-            LiteralExpression::Array(arr, ty) => {
+            Literal::Array(arr) => {
                 let mut values: Vec<BasicValueEnum> = Vec::new();
 
-                for val in arr {
+                for val in arr.elements {
                     values.push(self.compile_expression(val));
                 }
 
-                let array_ty = ty
+                let array_ty = arr
+                    .ty
+                    .kind
                     .to_llvm_type(self.context)
                     .array_type(values.len() as u32);
                 let ptr = self
@@ -180,14 +184,12 @@ impl<'ctx> Compiler<'ctx> {
 
                 ptr.as_basic_value_enum()
             }
+            _ => unimplemented!(),
         }
     }
 
-    fn compile_identifier_expression(
-        &mut self,
-        ident: IdentifierExpression,
-    ) -> BasicValueEnum<'ctx> {
-        let name = ident.name;
+    fn compile_identifier_expression(&mut self, ident: Identifier) -> BasicValueEnum<'ctx> {
+        let name = ident.value;
 
         let alloca = self.variables.get(&name).unwrap();
 
@@ -196,11 +198,13 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_call_expression(&mut self, call: CallExpression) -> BasicValueEnum<'ctx> {
-        let callee = call.callee;
+        let callee = call.function;
         let arguments = call.arguments;
 
         let function = match *callee {
-            Expression::Identifier(ident) => self.module.get_function(ident.name.as_str()).unwrap(),
+            Expression::Literal(Literal::Identifier(ident)) => {
+                self.module.get_function(ident.value.as_str()).unwrap()
+            }
             _ => panic!("Expected identifier expression"),
         };
 
@@ -241,31 +245,31 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_int_infix_expression(
         &mut self,
-        operator: String,
+        operator: InfixOperator,
         left: BasicValueEnum<'ctx>,
         right: BasicValueEnum<'ctx>,
     ) -> BasicValueEnum<'ctx> {
         let left = left.into_int_value();
         let right = right.into_int_value();
 
-        match operator.as_str() {
-            "+" => self
+        match operator {
+            InfixOperator::Plus => self
                 .builder
                 .build_int_add(left, right, "add")
                 .as_basic_value_enum(),
-            "-" => self
+            InfixOperator::Minus => self
                 .builder
                 .build_int_sub(left, right, "sub")
                 .as_basic_value_enum(),
-            "*" => self
+            InfixOperator::Asterisk => self
                 .builder
                 .build_int_mul(left, right, "mul")
                 .as_basic_value_enum(),
-            "/" => self
+            InfixOperator::Slash => self
                 .builder
                 .build_int_signed_div(left, right, "div")
                 .as_basic_value_enum(),
-            "%" => self
+            InfixOperator::Percent => self
                 .builder
                 .build_int_signed_rem(left, right, "rem")
                 .as_basic_value_enum(),
@@ -275,31 +279,31 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_float_infix_expression(
         &mut self,
-        operator: String,
+        operator: InfixOperator,
         left: BasicValueEnum<'ctx>,
         right: BasicValueEnum<'ctx>,
     ) -> BasicValueEnum<'ctx> {
         let left = left.into_float_value();
         let right = right.into_float_value();
 
-        match operator.as_str() {
-            "+" => self
+        match operator {
+            InfixOperator::Plus => self
                 .builder
                 .build_float_add(left, right, "add")
                 .as_basic_value_enum(),
-            "-" => self
+            InfixOperator::Minus => self
                 .builder
                 .build_float_sub(left, right, "sub")
                 .as_basic_value_enum(),
-            "*" => self
+            InfixOperator::Asterisk => self
                 .builder
                 .build_float_mul(left, right, "mul")
                 .as_basic_value_enum(),
-            "/" => self
+            InfixOperator::Slash => self
                 .builder
                 .build_float_div(left, right, "div")
                 .as_basic_value_enum(),
-            "%" => self
+            InfixOperator::Percent => self
                 .builder
                 .build_float_rem(left, right, "rem")
                 .as_basic_value_enum(),
@@ -309,7 +313,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_pointer_infix_expression(
         &mut self,
-        _operator: String,
+        _operator: InfixOperator,
         left: BasicValueEnum<'ctx>,
         right: BasicValueEnum<'ctx>,
     ) -> BasicValueEnum<'ctx> {
