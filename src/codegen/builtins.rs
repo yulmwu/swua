@@ -1,41 +1,74 @@
 use inkwell::{
     context::Context,
     module::{Linkage, Module},
-    types::BasicMetadataTypeEnum,
+    types::{BasicMetadataTypeEnum, FunctionType},
     AddressSpace,
 };
 
+pub trait Builtin {
+    fn name(&self) -> &str;
+    fn ty<'a>(&self, context: &'a Context) -> FunctionType<'a>;
+}
+
 pub fn add_builtins<'a>(module: &Module<'a>, context: &'a Context) {
-    module.add_function(
-        "printf",
+    macro_rules! add_function {
+        ($($fn:ident)*) => {
+            $(
+                module.add_function($fn.name(), $fn.ty(context), Some(Linkage::External));
+            )*
+        }
+    }
+
+    add_function! { Printf Print PrintStr }
+}
+
+struct Printf;
+
+impl Builtin for Printf {
+    fn name(&self) -> &str {
+        "printf"
+    }
+
+    fn ty<'a>(&self, context: &'a Context) -> FunctionType<'a> {
         context.i64_type().fn_type(
             vec![BasicMetadataTypeEnum::PointerType(
                 context.i8_type().ptr_type(AddressSpace::from(0)),
             )]
             .as_slice(),
             true,
-        ),
-        Some(Linkage::External),
-    );
+        )
+    }
+}
 
-    module.add_function(
-        "print",
+struct Print;
+
+impl Builtin for Print {
+    fn name(&self) -> &str {
+        "print"
+    }
+
+    fn ty<'a>(&self, context: &'a Context) -> FunctionType<'a> {
         context.i64_type().fn_type(
             vec![BasicMetadataTypeEnum::IntType(context.i64_type())].as_slice(),
             true,
-        ),
-        Some(Linkage::External),
-    );
+        )
+    }
+}
 
-    module.add_function(
-        "print_str",
+struct PrintStr;
+
+impl Builtin for PrintStr {
+    fn name(&self) -> &str {
+        "print_str"
+    }
+
+    fn ty<'a>(&self, context: &'a Context) -> FunctionType<'a> {
         context.i8_type().ptr_type(AddressSpace::from(0)).fn_type(
             vec![BasicMetadataTypeEnum::PointerType(
                 context.i8_type().ptr_type(AddressSpace::from(0)),
             )]
             .as_slice(),
             true,
-        ),
-        Some(Linkage::External),
-    );
+        )
+    }
 }

@@ -24,7 +24,7 @@ fn main() -> int {
 
     compiler.compile_module("main".to_string(), program);
 
-    // println!("{}", compiler.module.print_to_string().to_string());
+    println!("{}", compiler.module.print_to_string().to_string());
     fs::write(
         "./build/main.ll",
         compiler.module.print_to_string().to_string(),
@@ -39,7 +39,7 @@ fn main() -> int {
             .create_jit_execution_engine(OptimizationLevel::None)
             .unwrap()
             .get_function::<JitMainFunc>("main")
-            .unwrap();
+            .expect("Failed to find main function");
 
         println!("JIT Return: {}", main.call());
     };
