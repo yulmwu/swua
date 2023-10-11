@@ -12,34 +12,24 @@ pub enum Literal {
     Struct(StructLiteral),
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Identifier {
-    pub value: String,
-    pub position: Position,
+macro_rules! scalar_type {
+    ($($name:ident: $ty:ty),*) => {
+        $(
+            #[derive(Debug, PartialEq, Clone)]
+            pub struct $name {
+                pub value: $ty,
+                pub position: Position,
+            }
+        )*
+    }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct IntLiteral {
-    pub value: i64,
-    pub position: Position,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct FloatLiteral {
-    pub value: f64,
-    pub position: Position,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct StringLiteral {
-    pub value: String,
-    pub position: Position,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct BooleanLiteral {
-    pub value: bool,
-    pub position: Position,
+scalar_type! {
+    Identifier: String,
+    IntLiteral: i64,
+    FloatLiteral: f64,
+    StringLiteral: String,
+    BooleanLiteral: bool
 }
 
 #[derive(Debug, PartialEq, Clone)]
