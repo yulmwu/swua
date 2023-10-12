@@ -13,8 +13,13 @@ fn add(a: int, b: int) -> int {
 }
 
 fn main() -> int {
-    let a = 10;
-    print_str(print_str("Hello, World!"));
+    // let a: int = 10;
+    // print_str(print_str("Hello, World!"));
+    let arr: int[] = [int; 1, 2, 3, 4, 5];
+    // print_array(arr, 5);
+    print(arr[4]);
+    // let str: string = "Hello, World!";
+    // print_str(str);
     return add(a, 10);
 }
 "#

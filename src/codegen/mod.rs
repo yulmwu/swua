@@ -16,7 +16,7 @@ pub struct Compiler<'ctx> {
     pub builder: Builder<'ctx>,
     pub module: Module<'ctx>,
 
-    variables: HashMap<String, PointerValue<'ctx>>,
+    variables: HashMap<String, (PointerValue<'ctx>, TyKind)>,
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -57,6 +57,7 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Literal(lit) => self.compile_literal_expression(lit),
             Expression::CallExpression(call) => self.compile_call_expression(call),
             Expression::InfixExpression(infix) => self.compile_infix_expression(infix),
+            Expression::IndexExpression(index) => self.compile_index_expression(index),
             _ => unimplemented!(),
         }
     }
@@ -64,6 +65,7 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_let_statement(&mut self, stmt: LetStatement) {
         let name = stmt.identifier.value;
         let initializer = stmt.value;
+        let ty = stmt.ty.expect("TODO").kind;
 
         let alloca = self
             .builder
@@ -74,7 +76,7 @@ impl<'ctx> Compiler<'ctx> {
             self.builder.build_store(alloca, value);
         }
 
-        self.variables.insert(name, alloca);
+        self.variables.insert(name, (alloca, ty));
     }
 
     fn compile_function_declaration(&mut self, func: FunctionDeclaration) {
@@ -104,8 +106,10 @@ impl<'ctx> Compiler<'ctx> {
 
             self.builder.build_store(alloca, param);
 
-            self.variables
-                .insert(parameters[i].identifier.value.clone(), alloca);
+            self.variables.insert(
+                parameters[i].identifier.value.clone(),
+                (alloca, TyKind::from(param.get_type())),
+            );
         }
 
         for stmt in body.statements {
@@ -191,10 +195,10 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_identifier_expression(&mut self, ident: Identifier) -> BasicValueEnum<'ctx> {
         let name = ident.value;
 
-        let alloca = self.variables.get(&name).unwrap();
+        let (alloca, ty) = self.variables.get(&name).unwrap();
+        let ty = ty.to_llvm_type_compound_as_ptr(self.context);
 
-        self.builder
-            .build_load(self.context.i64_type(), *alloca, name.as_str())
+        self.builder.build_load(ty, *alloca, name.as_str())
     }
 
     fn compile_call_expression(&mut self, call: CallExpression) -> BasicValueEnum<'ctx> {
@@ -324,5 +328,24 @@ impl<'ctx> Compiler<'ctx> {
         println!("{:#?}", right);
 
         BasicValueEnum::PointerValue(left)
+    }
+
+    fn compile_index_expression(&mut self, index: IndexExpression) -> BasicValueEnum<'ctx> {
+        let left = self.compile_expression(*index.left);
+        let index = self.compile_expression(*index.index);
+
+        let left = left.into_pointer_value();
+
+        let ptr = unsafe {
+            self.builder.build_gep(
+                self.context.i64_type(),
+                left,
+                &[index.into_int_value()],
+                "ptr",
+            )
+        };
+
+        self.builder
+            .build_load(self.context.i64_type(), ptr, "load")
     }
 }

@@ -68,6 +68,36 @@ impl TyKind {
             _ => unimplemented!(),
         }
     }
+
+    pub fn to_llvm_type_compound_as_ptr<'a>(&self, context: &'a Context) -> BasicTypeEnum<'a> {
+        match self {
+            TyKind::Int => context.i64_type().into(),
+            TyKind::Float => context.f64_type().into(),
+            TyKind::String => context.i8_type().into(),
+            TyKind::Boolean => context.bool_type().into(),
+            TyKind::Array(ty) => ty
+                .kind
+                .to_llvm_type_compound_as_ptr(context)
+                .ptr_type(AddressSpace::from(0))
+                .into(),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl From<BasicTypeEnum<'_>> for TyKind {
+    fn from(basic_type: BasicTypeEnum) -> Self {
+        match basic_type {
+            BasicTypeEnum::IntType(_) => Self::Int,
+            BasicTypeEnum::FloatType(_) => Self::Float,
+            BasicTypeEnum::PointerType(_) => Self::String,
+            BasicTypeEnum::ArrayType(array_type) => Self::Array(Box::new(Ty::new(
+                TyKind::from(array_type.array_type(0).as_basic_type_enum()),
+                Position(0, 0),
+            ))),
+            _ => unimplemented!(),
+        }
+    }
 }
 
 pub type IdentifierGeneric = Vec<Identifier>;

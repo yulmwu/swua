@@ -19,7 +19,7 @@ pub fn add_builtins<'a>(module: &Module<'a>, context: &'a Context) {
         }
     }
 
-    add_function! { Printf Print PrintStr }
+    add_function! { Printf Print PrintStr PrintArr }
 }
 
 struct Printf;
@@ -67,6 +67,27 @@ impl Builtin for PrintStr {
             vec![BasicMetadataTypeEnum::PointerType(
                 context.i8_type().ptr_type(AddressSpace::from(0)),
             )]
+            .as_slice(),
+            true,
+        )
+    }
+}
+
+struct PrintArr;
+
+impl Builtin for PrintArr {
+    fn name(&self) -> &str {
+        "print_array"
+    }
+
+    fn ty<'a>(&self, context: &'a Context) -> FunctionType<'a> {
+        context.i64_type().fn_type(
+            vec![
+                BasicMetadataTypeEnum::PointerType(
+                    context.i64_type().ptr_type(AddressSpace::from(0)),
+                ),
+                BasicMetadataTypeEnum::IntType(context.i64_type()),
+            ]
             .as_slice(),
             true,
         )
