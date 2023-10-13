@@ -81,6 +81,8 @@ impl<'a> Lexer<'a> {
             self.read_char();
         }
 
+        println!("{}", &self.input[position..self.position]);
+
         if has_dot {
             TokenKind::Float(self.input[position..self.position].parse::<f64>().unwrap())
         } else {
@@ -200,11 +202,11 @@ impl<'a> Lexer<'a> {
         };
 
         match self.current_char {
-            c if c.is_alphabetic() => {
+            'a'..='z' | 'A'..='Z' | '_' => {
                 let position = self.current_position;
                 Token::new(TokenKind::from(self.read_identifier()), position)
             }
-            c if c.is_numeric() => {
+            '0'..='9' => {
                 let position = self.current_position;
                 Token::new(self.read_number(), position)
             }
