@@ -196,7 +196,7 @@ impl<'ctx> Compiler<'ctx> {
         let name = ident.value;
 
         let (alloca, ty) = self.variables.get(&name).unwrap();
-        let ty = ty.to_llvm_type_compound_as_ptr(self.context);
+        let ty = ty.to_llvm_type(self.context);
 
         self.builder.build_load(ty, *alloca, name.as_str())
     }
