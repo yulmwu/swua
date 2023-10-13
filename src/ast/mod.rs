@@ -62,22 +62,11 @@ impl TyKind {
         match self {
             TyKind::Int => context.i64_type().into(),
             TyKind::Float => context.f64_type().into(),
-            TyKind::String => context.i8_type().ptr_type(AddressSpace::from(0)).into(),
-            TyKind::Boolean => context.bool_type().into(),
-            TyKind::Array(ty) => ty.kind.to_llvm_type(context).array_type(0).into(),
-            _ => unimplemented!(),
-        }
-    }
-
-    pub fn to_llvm_type_compound_as_ptr<'a>(&self, context: &'a Context) -> BasicTypeEnum<'a> {
-        match self {
-            TyKind::Int => context.i64_type().into(),
-            TyKind::Float => context.f64_type().into(),
             TyKind::String => context.i8_type().into(),
             TyKind::Boolean => context.bool_type().into(),
             TyKind::Array(ty) => ty
                 .kind
-                .to_llvm_type_compound_as_ptr(context)
+                .to_llvm_type(context)
                 .ptr_type(AddressSpace::from(0))
                 .into(),
             _ => unimplemented!(),
