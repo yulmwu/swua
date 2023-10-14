@@ -165,6 +165,9 @@ impl<'a> Parser<'a> {
             TokenKind::Function => {
                 Statement::FunctionDeclaration(self.parse_function_declaration()?)
             }
+            TokenKind::Extern => {
+                Statement::ExternFunctionDeclaration(self.parse_extern_function_declaration()?)
+            }
             TokenKind::Return => Statement::ReturnStatement(self.parse_return_statement()?),
             TokenKind::Type => Statement::TypeStatement(self.parse_type_statement()?),
             TokenKind::Declare => Statement::DeclareStatement(self.parse_declare_statement()?),
@@ -227,6 +230,61 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_extern_function_declaration(&mut self) -> ParseResult<ExternFunctionDeclaration> {
+        self.next_token();
+
+        self.expect_token(&TokenKind::Function)?;
+
+        let ident = ident_token_to_string! { self };
+        self.next_token();
+
+        let generics = if self.current_token.kind == TokenKind::LT {
+            let result = self.parse_generic_identifier()?;
+            self.next_token();
+            result
+        } else {
+            Vec::new()
+        };
+
+        self.expect_token(&TokenKind::LParen)?;
+
+        let mut parameters = Vec::new();
+
+        while self.current_token.kind != TokenKind::RParen {
+            parameters.push(self.parse_ty()?);
+
+            if self.current_token.kind == TokenKind::RParen {
+                break;
+            }
+
+            self.expect_token(&TokenKind::Comma)?;
+        }
+
+        self.expect_token(&TokenKind::RParen)?;
+        self.expect_token(&TokenKind::Arrow)?;
+
+        let ret = self.parse_ty()?;
+
+        if self.current_token.kind != TokenKind::Semicolon {
+            return Err(ParsingError::expected_next_token(
+                TokenKind::Semicolon.to_string(),
+                self.current_token.kind.to_string(),
+                self.position,
+            ));
+        }
+
+        Ok(ExternFunctionDeclaration {
+            identifier: Identifier {
+                value: ident,
+                position: self.position,
+            },
+            parameters,
+            ret,
+            generics,
+            position: self.position,
+        })
+    }
+
     fn parse_return_statement(&mut self) -> ParseResult<ReturnStatement> {
         self.next_token();
 
@@ -271,23 +329,23 @@ impl<'a> Parser<'a> {
 
         let ty = self.parse_ty()?;
 
-        if self.current_token.kind == TokenKind::Semicolon {
-            Ok(TypeStatement {
-                identifier: Identifier {
-                    value: ident,
-                    position: self.position,
-                },
-                ty,
-                generics,
-                position: self.position,
-            })
-        } else {
-            Err(ParsingError::expected_next_token(
+        if self.current_token.kind != TokenKind::Semicolon {
+            return Err(ParsingError::expected_next_token(
                 TokenKind::Semicolon.to_string(),
                 self.current_token.kind.to_string(),
                 self.position,
-            ))
+            ));
         }
+
+        Ok(TypeStatement {
+            identifier: Identifier {
+                value: ident,
+                position: self.position,
+            },
+            ty,
+            generics,
+            position: self.position,
+        })
     }
 
     fn parse_declare_statement(&mut self) -> ParseResult<DeclareStatement> {
@@ -300,22 +358,22 @@ impl<'a> Parser<'a> {
 
         let ty = self.parse_ty()?;
 
-        if self.current_token.kind == TokenKind::Semicolon {
-            Ok(DeclareStatement {
-                identifier: Identifier {
-                    value: ident,
-                    position: self.position,
-                },
-                ty,
-                position: self.position,
-            })
-        } else {
-            Err(ParsingError::expected_next_token(
+        if self.current_token.kind != TokenKind::Semicolon {
+            return Err(ParsingError::expected_next_token(
                 TokenKind::Semicolon.to_string(),
                 self.current_token.kind.to_string(),
                 self.position,
-            ))
+            ));
         }
+
+        Ok(DeclareStatement {
+            identifier: Identifier {
+                value: ident,
+                position: self.position,
+            },
+            ty,
+            position: self.position,
+        })
     }
 
     fn parse_struct_statement(&mut self) -> ParseResult<StructStatement> {
@@ -349,7 +407,11 @@ impl<'a> Parser<'a> {
 
             let value = self.parse_ty()?;
 
-            fields.push((key, value));
+            fields.push(StructField {
+                identifier: key,
+                ty: value,
+                position: self.position,
+            });
 
             if self.current_token.kind == TokenKind::RBrace {
                 break;
@@ -655,9 +717,9 @@ impl<'a> Parser<'a> {
     fn parse_struct_literal(&mut self) -> ParseResult<StructLiteral> {
         self.next_token();
         let identifier = ident_token_to_string! { self };
+        self.next_token();
 
-        self.next_token();
-        self.next_token();
+        self.expect_token(&TokenKind::LBrace)?;
 
         let mut fields = Vec::new();
 
