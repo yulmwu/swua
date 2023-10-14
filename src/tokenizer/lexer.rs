@@ -81,8 +81,6 @@ impl<'a> Lexer<'a> {
             self.read_char();
         }
 
-        println!("{}", &self.input[position..self.position]);
-
         if has_dot {
             TokenKind::Float(self.input[position..self.position].parse::<f64>().unwrap())
         } else {

@@ -20,7 +20,7 @@ pub enum TokenKind<'a> {
 
     IntType, FloatType, StringType, BooleanType,
 
-    Debug
+    Debug, Extern,
 }
 
 impl<'a> From<&'a str> for TokenKind<'a> {
@@ -43,6 +43,7 @@ impl<'a> From<&'a str> for TokenKind<'a> {
             "string" => TokenKind::StringType,
             "boolean" => TokenKind::BooleanType,
             "debug" => TokenKind::Debug,
+            "extern" => TokenKind::Extern,
             s => TokenKind::IDENT(s),
         }
     }
