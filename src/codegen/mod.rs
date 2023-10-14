@@ -1,7 +1,4 @@
-pub mod builtins;
-
 use crate::ast::*;
-use builtins::add_builtins;
 use inkwell::{
     builder::Builder,
     context::Context,
@@ -35,20 +32,23 @@ impl<'ctx> Compiler<'ctx> {
     pub fn compile_module(&mut self, name: String, program: Program) {
         self.module = self.context.create_module(name.as_str());
 
-        add_builtins(&self.module, self.context);
-
         for stmt in program {
-            match stmt {
-                Statement::LetStatement(stmt) => self.compile_let_statement(stmt),
-                Statement::FunctionDeclaration(func) => self.compile_function_declaration(func),
-                Statement::ReturnStatement(expr) => {
-                    self.compile_expression(expr.value);
-                }
-                Statement::ExpressionStatement(expr) => {
-                    self.compile_expression(expr.expression);
-                }
-                _ => unimplemented!(),
+            self.compile_statement(stmt);
+        }
+    }
+
+    pub fn compile_statement(&mut self, stmt: Statement) {
+        match stmt {
+            Statement::LetStatement(stmt) => self.compile_let_statement(stmt),
+            Statement::FunctionDeclaration(func) => self.compile_function_declaration(func),
+            Statement::ExternFunctionDeclaration(func) => {
+                self.compile_external_function_declaration(func)
             }
+            Statement::StructStatement(stmt) => self.compile_struct_statement(stmt),
+            Statement::ExpressionStatement(expr) => {
+                self.compile_expression(expr.expression);
+            }
+            _ => unimplemented!(),
         }
     }
 
@@ -119,16 +119,35 @@ impl<'ctx> Compiler<'ctx> {
                 Statement::ReturnStatement(expr) => {
                     let value = self.compile_expression(expr.value);
                     self.builder.build_return(Some(&value));
-                    return;
+
+                    break;
                 }
+                Statement::StructStatement(stmt) => self.compile_struct_statement(stmt),
                 Statement::ExpressionStatement(expr) => {
                     self.compile_expression(expr.expression);
                 }
                 _ => unimplemented!(),
             }
         }
+    }
 
-        self.builder.build_return(None);
+    fn compile_external_function_declaration(&mut self, func: ExternFunctionDeclaration) {
+        let name = func.identifier.value;
+        let parameters = func.parameters;
+        let ret = func.ret.kind;
+
+        self.module.add_function(
+            name.as_str(),
+            ret.to_llvm_type(self.context).fn_type(
+                parameters
+                    .iter()
+                    .map(|param| param.kind.to_llvm_type_meta(self.context))
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                false,
+            ),
+            None,
+        );
     }
 
     fn compile_literal_expression(&mut self, lit: Literal) -> BasicValueEnum<'ctx> {
@@ -168,6 +187,46 @@ impl<'ctx> Compiler<'ctx> {
                 let ptr = self
                     .builder
                     .build_alloca(array_ty, "array")
+                    .as_basic_value_enum()
+                    .into_pointer_value();
+
+                for (i, val) in values.iter().enumerate() {
+                    let index = self.context.i64_type().const_int(i as u64, false);
+
+                    let ptr = unsafe {
+                        self.builder.build_in_bounds_gep(
+                            self.context.i64_type(),
+                            ptr,
+                            &[index],
+                            "ptr",
+                        )
+                    };
+
+                    self.builder.build_store(ptr, *val);
+                }
+
+                ptr.as_basic_value_enum()
+            }
+            // Literal::ArrayHeap(arr) => {
+            //     /*
+            //     | len | capacity | ptr |
+            //     */
+
+            //     let struct_ty = self.module.get_struct_type("Array").unwrap();
+            // }
+            Literal::Struct(struct_lit) => {
+                let name = struct_lit.identifier.value;
+                let struct_ty = self.module.get_struct_type(name.as_str()).unwrap();
+
+                let mut values: Vec<BasicValueEnum> = Vec::new();
+
+                for val in struct_lit.fields {
+                    values.push(self.compile_expression(val.1));
+                }
+
+                let ptr = self
+                    .builder
+                    .build_alloca(struct_ty, "struct")
                     .as_basic_value_enum()
                     .into_pointer_value();
 
@@ -243,7 +302,24 @@ impl<'ctx> Compiler<'ctx> {
             (BasicTypeEnum::PointerType(_), BasicTypeEnum::PointerType(_)) => {
                 self.compile_pointer_infix_expression(operator, left, right)
             }
-            _ => panic!("Unknown type"),
+            // foo.a (getelementptr)
+            (BasicTypeEnum::StructType(_), BasicTypeEnum::PointerType(_)) => {
+                // let left = left.into_struct_value();
+                let right = right.into_pointer_value();
+
+                let ptr = unsafe {
+                    self.builder.build_gep(
+                        self.context.i64_type(),
+                        right,
+                        &[left.into_int_value()],
+                        "ptr",
+                    )
+                };
+
+                self.builder
+                    .build_load(self.context.i64_type(), ptr, "load")
+            }
+            _ => panic!("Unknown type: {:?} {:?}", left.get_type(), right.get_type()),
         }
     }
 
@@ -324,6 +400,11 @@ impl<'ctx> Compiler<'ctx> {
         let left = left.into_pointer_value();
         let right = right.into_pointer_value();
 
+        let deref = self
+            .builder
+            .build_load(self.context.i64_type(), left, "deref");
+        println!("{:#?}", deref);
+
         println!("{:#?}", left);
         println!("{:#?}", right);
 
@@ -332,6 +413,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_index_expression(&mut self, index: IndexExpression) -> BasicValueEnum<'ctx> {
         let left = self.compile_expression(*index.left);
+        println!("{:#?}", left);
         let index = self.compile_expression(*index.index);
 
         let left = left.into_pointer_value();
@@ -347,5 +429,22 @@ impl<'ctx> Compiler<'ctx> {
 
         self.builder
             .build_load(self.context.i64_type(), ptr, "load")
+    }
+
+    fn compile_struct_statement(&mut self, stmt: StructStatement) {
+        let name = stmt.identifier.value;
+        let fields = stmt.fields;
+
+        let mut fields_ty = Vec::new();
+
+        for field in fields {
+            fields_ty.push(field.ty.kind.to_llvm_type(self.context));
+        }
+
+        let struct_ty = self.context.opaque_struct_type(name.as_str());
+
+        struct_ty.set_body(fields_ty.as_slice(), false);
+
+        self.module.add_global(struct_ty, None, name.as_str());
     }
 }
