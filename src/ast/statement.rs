@@ -1,9 +1,10 @@
-use super::{Expression, FunctionLiteral, Identifier, IdentifierGeneric, Position, Ty};
+use super::{Expression, FunctionLiteral, Identifier, IdentifierGeneric, Position, Ty, StructField};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
     LetStatement(LetStatement),
     FunctionDeclaration(FunctionDeclaration),
+    ExternFunctionDeclaration(ExternFunctionDeclaration),
     ReturnStatement(ReturnStatement),
     TypeStatement(TypeStatement),
     DeclareStatement(DeclareStatement),
@@ -27,6 +28,15 @@ pub struct FunctionDeclaration {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct ExternFunctionDeclaration {
+    pub identifier: Identifier,
+    pub parameters: Vec<Ty>,
+    pub ret: Ty,
+    pub generics: IdentifierGeneric,
+    pub position: Position,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct TypeStatement {
     pub identifier: Identifier,
     pub ty: Ty,
@@ -45,7 +55,7 @@ pub struct DeclareStatement {
 pub struct StructStatement {
     pub identifier: Identifier,
     pub generics: IdentifierGeneric,
-    pub fields: Vec<(Identifier, Ty)>,
+    pub fields: Vec<StructField>,
     pub position: Position,
 }
 
