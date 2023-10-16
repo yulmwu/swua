@@ -192,17 +192,7 @@ impl<'a> Parser<'a> {
             None
         };
 
-        if self.current_token.kind != TokenKind::Assign {
-            return Ok(LetStatement {
-                identifier: ident,
-                ty,
-                value: None,
-                is_mutable,
-                position: self.position,
-            });
-        }
-
-        self.next_token();
+        self.expect_token(&TokenKind::Assign)?;
 
         let expression = self.parse_expression(&Priority::Lowest)?;
         self.next_token();
@@ -241,9 +231,9 @@ impl<'a> Parser<'a> {
         let generics = if self.current_token.kind == TokenKind::LT {
             let result = self.parse_generic_identifier()?;
             self.next_token();
-            result
+            Some(result)
         } else {
-            Vec::new()
+            None
         };
 
         self.expect_token(&TokenKind::LParen)?;
@@ -318,11 +308,11 @@ impl<'a> Parser<'a> {
         self.next_token();
 
         let generics = if self.current_token.kind == TokenKind::LT {
-            let result = self.parse_generic_identifier()?;
+            let generic = self.parse_generic_identifier()?;
             self.next_token();
-            result
+            Some(generic)
         } else {
-            Vec::new()
+            None
         };
 
         self.expect_token(&TokenKind::Assign)?;
@@ -384,12 +374,10 @@ impl<'a> Parser<'a> {
 
         let generics = if self.current_token.kind == TokenKind::LT {
             let generic = self.parse_generic_identifier()?;
-
             self.next_token();
-
-            generic
+            Some(generic)
         } else {
-            Vec::new()
+            None
         };
 
         self.expect_token(&TokenKind::LBrace)?;
@@ -766,10 +754,9 @@ impl<'a> Parser<'a> {
         self.next_token();
 
         let generics = if self.current_token.kind == TokenKind::LT {
-            let result = Some(self.parse_generic_identifier()?);
+            let generic = self.parse_generic_identifier()?;
             self.next_token();
-
-            result
+            Some(generic)
         } else {
             None
         };
@@ -907,10 +894,29 @@ impl<'a> Parser<'a> {
             ty = Ok(TyKind::Generic(generics));
         }
 
-        while self.peek_token(&TokenKind::LBracket) {
+        if self.peek_token(&TokenKind::LBracket) {
             self.next_token();
             self.next_token();
 
+            match self.parse_expression(&Priority::Lowest)? {
+                Expression::Literal(Literal::Int(IntLiteral { value, .. })) => {
+                    ty = Ok(TyKind::Array(
+                        Box::new(Ty {
+                            kind: ty?,
+                            position: self.position,
+                        }),
+                        value as usize,
+                    ));
+                }
+                _ => {
+                    return Err(ParsingError::expected_expression(
+                        "Int".to_string(),
+                        self.position,
+                    ))
+                }
+            }
+
+            self.next_token();
             if self.current_token.kind != TokenKind::RBracket {
                 return Err(ParsingError::expected_next_token(
                     TokenKind::RBracket.to_string(),
@@ -918,13 +924,6 @@ impl<'a> Parser<'a> {
                     self.position,
                 ));
             }
-
-            ty = ty.map(|ty| {
-                TyKind::Array(Box::new(Ty {
-                    kind: ty,
-                    position: self.position,
-                }))
-            });
         }
 
         ty
@@ -934,10 +933,9 @@ impl<'a> Parser<'a> {
         self.next_token();
 
         let generics = if self.current_token.kind == TokenKind::LT {
-            let result = Some(self.parse_generic_identifier()?);
+            let generic = self.parse_generic_identifier()?;
             self.next_token();
-
-            result
+            Some(generic)
         } else {
             None
         };
@@ -964,7 +962,7 @@ impl<'a> Parser<'a> {
         Ok(FunctionType {
             generics,
             parameters,
-            return_type: Box::new(Ty {
+            ret: Box::new(Ty {
                 kind: return_type,
                 position: self.position,
             }),
