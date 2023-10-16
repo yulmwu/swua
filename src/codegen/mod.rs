@@ -3,17 +3,25 @@ use inkwell::{
     builder::Builder,
     context::Context,
     module::Module,
-    types::{BasicType, BasicTypeEnum},
+    types::{self, BasicType},
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue},
 };
 use std::collections::HashMap;
+
+#[derive(Debug, PartialEq, Clone, Default)]
+pub struct SymbolTable<'a> {
+    pub variables: HashMap<String, (PointerValue<'a>, TyKind)>,
+    pub structs: HashMap<String, (types::StructType<'a>, StructType)>,
+    pub struct_fields: HashMap<PointerValue<'a>, TyKind>,
+    pub functions: HashMap<String, (types::FunctionType<'a>, FunctionType)>,
+}
 
 pub struct Compiler<'ctx> {
     pub context: &'ctx Context,
     pub builder: Builder<'ctx>,
     pub module: Module<'ctx>,
 
-    variables: HashMap<String, (PointerValue<'ctx>, TyKind)>,
+    symbol_table: SymbolTable<'ctx>,
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -25,7 +33,7 @@ impl<'ctx> Compiler<'ctx> {
             context,
             builder,
             module,
-            variables: HashMap::new(),
+            symbol_table: SymbolTable::default(),
         }
     }
 
@@ -52,14 +60,15 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    pub fn compile_expression(&mut self, expr: Expression) -> BasicValueEnum<'ctx> {
-        match expr {
+    pub fn compile_expression(&mut self, expr: Expression) -> (BasicValueEnum<'ctx>, TyKind) {
+        let (value, ty) = match expr {
             Expression::Literal(lit) => self.compile_literal_expression(lit),
             Expression::CallExpression(call) => self.compile_call_expression(call),
             Expression::InfixExpression(infix) => self.compile_infix_expression(infix),
             Expression::IndexExpression(index) => self.compile_index_expression(index),
             _ => unimplemented!(),
-        }
+        };
+        (value, ty.analyzed(self.context, self.symbol_table.clone()))
     }
 
     fn compile_let_statement(&mut self, stmt: LetStatement) {
@@ -72,21 +81,36 @@ impl<'ctx> Compiler<'ctx> {
             .build_alloca(self.context.i64_type(), name.as_str());
 
         if let Some(expr) = initializer {
-            let value = self.compile_expression(expr);
+            let value = self.compile_expression(expr).0;
             self.builder.build_store(alloca, value);
         }
 
-        self.variables.insert(name, (alloca, ty));
+        self.symbol_table.variables.insert(name, (alloca, ty));
     }
 
     fn compile_function_declaration(&mut self, func: FunctionDeclaration) {
-        let name = func.identifier.value;
-        let parameters = func.function.parameters;
-        let body = func.function.body;
+        let FunctionDeclaration {
+            identifier: Identifier { value: name, .. },
+            function:
+                FunctionLiteral {
+                    parameters,
+                    body,
+                    generics,
+                    ret,
+                    position,
+                },
+            ..
+        } = func;
 
         let parameters_ty = parameters
             .iter()
-            .map(|param| param.ty.kind.to_llvm_type_meta(self.context))
+            .map(|param| {
+                param
+                    .ty
+                    .kind
+                    .to_llvm_type(self.context, self.symbol_table.clone())
+                    .into()
+            })
             .collect::<Vec<_>>();
         let function_type = self
             .context
@@ -99,6 +123,19 @@ impl<'ctx> Compiler<'ctx> {
 
         self.builder.position_at_end(basic_block);
 
+        self.symbol_table.functions.insert(
+            name.clone(),
+            (
+                function_type,
+                FunctionType {
+                    generics,
+                    parameters: parameters.iter().map(|param| param.ty.clone()).collect(),
+                    ret: Box::new(ret),
+                    position,
+                },
+            ),
+        );
+
         for (i, param) in function.get_param_iter().enumerate() {
             let alloca = self
                 .builder
@@ -106,9 +143,9 @@ impl<'ctx> Compiler<'ctx> {
 
             self.builder.build_store(alloca, param);
 
-            self.variables.insert(
+            self.symbol_table.variables.insert(
                 parameters[i].identifier.value.clone(),
-                (alloca, TyKind::from(param.get_type())),
+                (alloca, parameters[i].ty.kind.clone()),
             );
         }
 
@@ -117,7 +154,7 @@ impl<'ctx> Compiler<'ctx> {
                 Statement::LetStatement(stmt) => self.compile_let_statement(stmt),
                 Statement::FunctionDeclaration(func) => self.compile_function_declaration(func),
                 Statement::ReturnStatement(expr) => {
-                    let value = self.compile_expression(expr.value);
+                    let value = self.compile_expression(expr.value).0;
                     self.builder.build_return(Some(&value));
 
                     break;
@@ -132,58 +169,86 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_external_function_declaration(&mut self, func: ExternFunctionDeclaration) {
-        let name = func.identifier.value;
-        let parameters = func.parameters;
-        let ret = func.ret.kind;
+        let ExternFunctionDeclaration {
+            identifier: Identifier { value: name, .. },
+            parameters,
+            ret,
+            generics,
+            position,
+        } = func;
 
-        self.module.add_function(
-            name.as_str(),
-            ret.to_llvm_type(self.context).fn_type(
+        let function_type = ret
+            .kind
+            .to_llvm_type(self.context, self.symbol_table.clone())
+            .fn_type(
                 parameters
                     .iter()
-                    .map(|param| param.kind.to_llvm_type_meta(self.context))
+                    .map(|param| {
+                        param
+                            .kind
+                            .to_llvm_type(self.context, self.symbol_table.clone())
+                            .into()
+                    })
                     .collect::<Vec<_>>()
                     .as_slice(),
                 false,
+            );
+
+        self.module.add_function(name.as_str(), function_type, None);
+
+        self.symbol_table.functions.insert(
+            name,
+            (
+                function_type,
+                FunctionType {
+                    generics,
+                    parameters,
+                    ret: Box::new(ret),
+                    position,
+                },
             ),
-            None,
         );
     }
 
-    fn compile_literal_expression(&mut self, lit: Literal) -> BasicValueEnum<'ctx> {
+    fn compile_literal_expression(&mut self, lit: Literal) -> (BasicValueEnum<'ctx>, TyKind) {
         match lit {
             Literal::Identifier(ident) => self.compile_identifier_expression(ident),
-            Literal::Int(i) => self
-                .context
-                .i64_type()
-                .const_int(i.value as u64, false)
-                .as_basic_value_enum(),
-            Literal::Float(f) => self
-                .context
-                .f64_type()
-                .const_float(f.value)
-                .as_basic_value_enum(),
-            Literal::String(s) => self
-                .builder
-                .build_global_string_ptr(s.value.as_str(), ".str")
-                .as_basic_value_enum(),
-            Literal::Boolean(b) => self
-                .context
-                .bool_type()
-                .const_int(b.value as u64, false)
-                .as_basic_value_enum(),
+            Literal::Int(i) => (
+                self.context
+                    .i64_type()
+                    .const_int(i.value as u64, false)
+                    .as_basic_value_enum(),
+                TyKind::Int,
+            ),
+            Literal::Float(f) => (
+                self.context
+                    .f64_type()
+                    .const_float(f.value)
+                    .as_basic_value_enum(),
+                TyKind::Float,
+            ),
+            Literal::String(s) => (
+                self.builder
+                    .build_global_string_ptr(s.value.as_str(), ".str")
+                    .as_basic_value_enum(),
+                TyKind::String,
+            ),
+            Literal::Boolean(b) => (
+                self.context
+                    .bool_type()
+                    .const_int(b.value as u64, false)
+                    .as_basic_value_enum(),
+                TyKind::Boolean,
+            ),
             Literal::Array(arr) => {
                 let mut values: Vec<BasicValueEnum> = Vec::new();
 
                 for val in arr.elements {
-                    values.push(self.compile_expression(val));
+                    values.push(self.compile_expression(val).0);
                 }
 
-                let array_ty = arr
-                    .ty
-                    .kind
-                    .to_llvm_type(self.context)
-                    .array_type(values.len() as u32);
+                let ty = TyKind::Array(Box::new(arr.ty.clone()), values.len());
+                let array_ty = ty.to_llvm_type(self.context, self.symbol_table.clone());
                 let ptr = self
                     .builder
                     .build_alloca(array_ty, "array")
@@ -198,14 +263,14 @@ impl<'ctx> Compiler<'ctx> {
                             self.context.i64_type(),
                             ptr,
                             &[index],
-                            "ptr",
+                            format!("ptr.{}", i).as_str(),
                         )
                     };
 
                     self.builder.build_store(ptr, *val);
                 }
 
-                ptr.as_basic_value_enum()
+                (ptr.as_basic_value_enum(), ty)
             }
             // Literal::ArrayHeap(arr) => {
             //     /*
@@ -221,7 +286,7 @@ impl<'ctx> Compiler<'ctx> {
                 let mut values: Vec<BasicValueEnum> = Vec::new();
 
                 for val in struct_lit.fields {
-                    values.push(self.compile_expression(val.1));
+                    values.push(self.compile_expression(val.1).0);
                 }
 
                 let ptr = self
@@ -245,46 +310,67 @@ impl<'ctx> Compiler<'ctx> {
                     self.builder.build_store(ptr, *val);
                 }
 
-                ptr.as_basic_value_enum()
+                (ptr.as_basic_value_enum(), TyKind::Custom(name))
             }
             _ => unimplemented!(),
         }
     }
 
-    fn compile_identifier_expression(&mut self, ident: Identifier) -> BasicValueEnum<'ctx> {
+    fn compile_identifier_expression(
+        &mut self,
+        ident: Identifier,
+    ) -> (BasicValueEnum<'ctx>, TyKind) {
         let name = ident.value;
 
-        let (alloca, ty) = self.variables.get(&name).unwrap();
-        let ty = ty.to_llvm_type(self.context);
+        let (alloca, ty) = self.symbol_table.variables.get(&name).unwrap();
+        let ptr_ty = ty.to_llvm_type(self.context, self.symbol_table.clone());
 
-        self.builder.build_load(ty, *alloca, name.as_str())
+        (
+            self.builder.build_load(ptr_ty, *alloca, name.as_str()),
+            ty.clone(),
+        )
     }
 
-    fn compile_call_expression(&mut self, call: CallExpression) -> BasicValueEnum<'ctx> {
-        let callee = call.function;
-        let arguments = call.arguments;
+    fn compile_call_expression(&mut self, call: CallExpression) -> (BasicValueEnum<'ctx>, TyKind) {
+        let CallExpression {
+            function: callee,
+            arguments,
+            ..
+        } = call;
 
-        let function = match *callee {
-            Expression::Literal(Literal::Identifier(ident)) => {
-                self.module.get_function(ident.value.as_str()).unwrap()
-            }
+        let (function, (_, function_ty), name) = match *callee {
+            Expression::Literal(Literal::Identifier(ident)) => (
+                self.module.get_function(ident.value.as_str()).unwrap(),
+                self.symbol_table
+                    .functions
+                    .get(&ident.value)
+                    .unwrap()
+                    .clone(),
+                ident.value,
+            ),
             _ => panic!("Expected identifier expression"),
         };
 
         let mut args: Vec<BasicMetadataValueEnum> = Vec::new();
 
         for arg in arguments {
-            args.push(self.compile_expression(arg).into());
+            args.push(self.compile_expression(arg).0.into());
         }
 
-        self.builder
-            .build_call(function, args.as_slice(), "call")
-            .try_as_basic_value()
-            .left()
-            .unwrap()
+        (
+            self.builder
+                .build_call(function, args.as_slice(), format!("{name}.call").as_str())
+                .try_as_basic_value()
+                .left()
+                .unwrap(),
+            function_ty.ret.kind.clone(),
+        )
     }
 
-    fn compile_infix_expression(&mut self, infix: InfixExpression) -> BasicValueEnum<'ctx> {
+    fn compile_infix_expression(
+        &mut self,
+        infix: InfixExpression,
+    ) -> (BasicValueEnum<'ctx>, TyKind) {
         let operator = infix.operator;
         let left = infix.left;
         let right = infix.right;
@@ -292,34 +378,10 @@ impl<'ctx> Compiler<'ctx> {
         let left = self.compile_expression(*left);
         let right = self.compile_expression(*right);
 
-        match (left.get_type(), right.get_type()) {
-            (BasicTypeEnum::IntType(_), BasicTypeEnum::IntType(_)) => {
-                self.compile_int_infix_expression(operator, left, right)
-            }
-            (BasicTypeEnum::FloatType(_), BasicTypeEnum::FloatType(_)) => {
-                self.compile_float_infix_expression(operator, left, right)
-            }
-            (BasicTypeEnum::PointerType(_), BasicTypeEnum::PointerType(_)) => {
-                self.compile_pointer_infix_expression(operator, left, right)
-            }
-            // foo.a (getelementptr)
-            (BasicTypeEnum::StructType(_), BasicTypeEnum::PointerType(_)) => {
-                // let left = left.into_struct_value();
-                let right = right.into_pointer_value();
-
-                let ptr = unsafe {
-                    self.builder.build_gep(
-                        self.context.i64_type(),
-                        right,
-                        &[left.into_int_value()],
-                        "ptr",
-                    )
-                };
-
-                self.builder
-                    .build_load(self.context.i64_type(), ptr, "load")
-            }
-            _ => panic!("Unknown type: {:?} {:?}", left.get_type(), right.get_type()),
+        match (left.clone().1, right.1) {
+            (TyKind::Int, _) => self.compile_int_infix_expression(operator, left.0, right.0),
+            (TyKind::Float, _) => self.compile_float_infix_expression(operator, left.0, right.0),
+            _ => panic!("Unknown type: {:?}", left.1),
         }
     }
 
@@ -328,33 +390,36 @@ impl<'ctx> Compiler<'ctx> {
         operator: InfixOperator,
         left: BasicValueEnum<'ctx>,
         right: BasicValueEnum<'ctx>,
-    ) -> BasicValueEnum<'ctx> {
+    ) -> (BasicValueEnum<'ctx>, TyKind) {
         let left = left.into_int_value();
         let right = right.into_int_value();
 
-        match operator {
-            InfixOperator::Plus => self
-                .builder
-                .build_int_add(left, right, "add")
-                .as_basic_value_enum(),
-            InfixOperator::Minus => self
-                .builder
-                .build_int_sub(left, right, "sub")
-                .as_basic_value_enum(),
-            InfixOperator::Asterisk => self
-                .builder
-                .build_int_mul(left, right, "mul")
-                .as_basic_value_enum(),
-            InfixOperator::Slash => self
-                .builder
-                .build_int_signed_div(left, right, "div")
-                .as_basic_value_enum(),
-            InfixOperator::Percent => self
-                .builder
-                .build_int_signed_rem(left, right, "rem")
-                .as_basic_value_enum(),
-            _ => panic!("Unknown operator"),
-        }
+        (
+            match operator {
+                InfixOperator::Plus => self
+                    .builder
+                    .build_int_add(left, right, "add")
+                    .as_basic_value_enum(),
+                InfixOperator::Minus => self
+                    .builder
+                    .build_int_sub(left, right, "sub")
+                    .as_basic_value_enum(),
+                InfixOperator::Asterisk => self
+                    .builder
+                    .build_int_mul(left, right, "mul")
+                    .as_basic_value_enum(),
+                InfixOperator::Slash => self
+                    .builder
+                    .build_int_signed_div(left, right, "div")
+                    .as_basic_value_enum(),
+                InfixOperator::Percent => self
+                    .builder
+                    .build_int_signed_rem(left, right, "rem")
+                    .as_basic_value_enum(),
+                _ => panic!("Unknown operator"),
+            },
+            TyKind::Int,
+        )
     }
 
     fn compile_float_infix_expression(
@@ -362,83 +427,152 @@ impl<'ctx> Compiler<'ctx> {
         operator: InfixOperator,
         left: BasicValueEnum<'ctx>,
         right: BasicValueEnum<'ctx>,
-    ) -> BasicValueEnum<'ctx> {
+    ) -> (BasicValueEnum<'ctx>, TyKind) {
         let left = left.into_float_value();
         let right = right.into_float_value();
 
-        match operator {
-            InfixOperator::Plus => self
-                .builder
-                .build_float_add(left, right, "add")
-                .as_basic_value_enum(),
-            InfixOperator::Minus => self
-                .builder
-                .build_float_sub(left, right, "sub")
-                .as_basic_value_enum(),
-            InfixOperator::Asterisk => self
-                .builder
-                .build_float_mul(left, right, "mul")
-                .as_basic_value_enum(),
-            InfixOperator::Slash => self
-                .builder
-                .build_float_div(left, right, "div")
-                .as_basic_value_enum(),
-            InfixOperator::Percent => self
-                .builder
-                .build_float_rem(left, right, "rem")
-                .as_basic_value_enum(),
-            _ => panic!("Unknown operator"),
+        (
+            match operator {
+                InfixOperator::Plus => self
+                    .builder
+                    .build_float_add(left, right, "add")
+                    .as_basic_value_enum(),
+                InfixOperator::Minus => self
+                    .builder
+                    .build_float_sub(left, right, "sub")
+                    .as_basic_value_enum(),
+                InfixOperator::Asterisk => self
+                    .builder
+                    .build_float_mul(left, right, "mul")
+                    .as_basic_value_enum(),
+                InfixOperator::Slash => self
+                    .builder
+                    .build_float_div(left, right, "div")
+                    .as_basic_value_enum(),
+                InfixOperator::Percent => self
+                    .builder
+                    .build_float_rem(left, right, "rem")
+                    .as_basic_value_enum(),
+                _ => panic!("Unknown operator"),
+            },
+            TyKind::Float,
+        )
+    }
+
+    fn compile_index_expression(
+        &mut self,
+        index: IndexExpression,
+    ) -> (BasicValueEnum<'ctx>, TyKind) {
+        let left = self.compile_expression(*index.clone().left);
+
+        match left.1 {
+            TyKind::Array(_, _) => self.compile_array_index_expression(index, left),
+            TyKind::Custom(_) => self.compile_struct_index_expression(index, left),
+            _ => panic!("Unknown type: {:?}", left.1),
         }
     }
 
-    fn compile_pointer_infix_expression(
+    fn compile_array_index_expression(
         &mut self,
-        _operator: InfixOperator,
-        left: BasicValueEnum<'ctx>,
-        right: BasicValueEnum<'ctx>,
-    ) -> BasicValueEnum<'ctx> {
-        let left = left.into_pointer_value();
-        let right = right.into_pointer_value();
-
-        let deref = self
-            .builder
-            .build_load(self.context.i64_type(), left, "deref");
-        println!("{:#?}", deref);
-
-        println!("{:#?}", left);
-        println!("{:#?}", right);
-
-        BasicValueEnum::PointerValue(left)
-    }
-
-    fn compile_index_expression(&mut self, index: IndexExpression) -> BasicValueEnum<'ctx> {
-        let left = self.compile_expression(*index.left);
-        println!("{:#?}", left);
+        index: IndexExpression,
+        left: (BasicValueEnum<'ctx>, TyKind),
+    ) -> (BasicValueEnum<'ctx>, TyKind) {
         let index = self.compile_expression(*index.index);
 
-        let left = left.into_pointer_value();
+        match index.1 {
+            TyKind::Int => {
+                let ptr = unsafe {
+                    self.builder.build_gep(
+                        self.context.i64_type(),
+                        left.0.into_pointer_value(),
+                        &[index.0.into_int_value()],
+                        "ptr",
+                    )
+                };
 
-        let ptr = unsafe {
-            self.builder.build_gep(
-                self.context.i64_type(),
-                left,
-                &[index.into_int_value()],
-                "ptr",
-            )
-        };
+                let element_ty = match left.1 {
+                    TyKind::Array(ty, _) => ty.kind,
+                    _ => unreachable!(),
+                };
+                (
+                    self.builder
+                        .build_load(self.context.i64_type(), ptr, "load"),
+                    element_ty,
+                )
+            }
+            _ => panic!("Unknown type: {:?}", index.1),
+        }
+    }
 
-        self.builder
-            .build_load(self.context.i64_type(), ptr, "load")
+    fn compile_struct_index_expression(
+        &mut self,
+        index: IndexExpression,
+        left: (BasicValueEnum<'ctx>, TyKind),
+    ) -> (BasicValueEnum<'ctx>, TyKind) {
+        let index = self.compile_expression(*index.index);
+
+        match index.1 {
+            TyKind::Int => {
+                let ptr = unsafe {
+                    self.builder.build_gep(
+                        self.context.i64_type(),
+                        left.0.into_pointer_value(),
+                        &[index.0.into_int_value()],
+                        "ptr",
+                    )
+                };
+
+                let element_ty = match left.0 {
+                    BasicValueEnum::PointerValue(ptr) => {
+                        self.symbol_table.struct_fields.get(&ptr).unwrap().clone()
+                    }
+                    _ => unreachable!(),
+                };
+                (
+                    self.builder
+                        .build_load(self.context.i64_type(), ptr, "load"),
+                    element_ty,
+                )
+            }
+            _ => panic!("Unknown type: {:?}", index.1),
+        }
     }
 
     fn compile_struct_statement(&mut self, stmt: StructStatement) {
-        let name = stmt.identifier.value;
-        let fields = stmt.fields;
+        let StructStatement {
+            identifier: Identifier { value: name, .. },
+            generics,
+            fields,
+            position,
+        } = stmt;
 
         let mut fields_ty = Vec::new();
 
-        for field in fields {
-            fields_ty.push(field.ty.kind.to_llvm_type(self.context));
+        for (index, field) in fields.iter().enumerate() {
+            fields_ty.push(
+                field
+                    .ty
+                    .kind
+                    .to_llvm_type(self.context, self.symbol_table.clone()),
+            );
+
+            // global struct.field = index
+            let global = self.module.add_global(
+                self.context.i64_type(),
+                None,
+                format!("{}.{}", name, field.identifier.value).as_str(),
+            );
+
+            global.set_initializer(&self.context.i64_type().const_int(index as u64, false));
+
+            self.symbol_table.variables.insert(
+                format!("{}.{}", name, field.identifier.value),
+                (global.as_pointer_value(), field.ty.kind.clone()),
+            );
+
+            self.symbol_table
+                .struct_fields
+                .insert(global.as_pointer_value(), field.ty.kind.clone());
         }
 
         let struct_ty = self.context.opaque_struct_type(name.as_str());
@@ -446,5 +580,16 @@ impl<'ctx> Compiler<'ctx> {
         struct_ty.set_body(fields_ty.as_slice(), false);
 
         self.module.add_global(struct_ty, None, name.as_str());
+        self.symbol_table.structs.insert(
+            name,
+            (
+                struct_ty,
+                StructType {
+                    generics,
+                    fields,
+                    position,
+                },
+            ),
+        );
     }
 }
