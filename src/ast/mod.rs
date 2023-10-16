@@ -5,12 +5,14 @@ pub mod statement;
 pub use expression::*;
 use inkwell::{
     context::Context,
-    types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum},
+    types::{BasicType, BasicTypeEnum},
     AddressSpace,
 };
 pub use literal::*;
 pub use statement::*;
 use std::fmt;
+
+use crate::codegen::SymbolTable;
 
 pub type Program = Vec<Statement>;
 
@@ -20,8 +22,9 @@ pub enum TyKind {
     Float,
     String,
     Boolean,
-    Array(Box<Ty>),
+    Array(Box<Ty>, usize),
     Fn(FunctionType),
+    Struct(StructType),
     Generic(Generic),
     Custom(String),
     Void,
@@ -33,8 +36,9 @@ impl fmt::Display for TyKind {
             TyKind::Int | TyKind::Float | TyKind::String | TyKind::Boolean => {
                 write!(f, "{self:?}")
             }
-            TyKind::Array(ty) => write!(f, "{ty}[]"),
+            TyKind::Array(ty, size) => write!(f, "{}[{}]", ty.kind, size),
             TyKind::Fn(function_type) => write!(f, "{function_type}"),
+            TyKind::Struct(struct_type) => write!(f, "{struct_type}"),
             TyKind::Generic(generic) => write!(f, "{generic}"),
             TyKind::Custom(identifier) => write!(f, "{identifier}"),
             TyKind::Void => write!(f, "Void"),
@@ -43,77 +47,64 @@ impl fmt::Display for TyKind {
 }
 
 impl TyKind {
-    pub fn to_llvm_type_meta<'a>(&self, context: &'a Context) -> BasicMetadataTypeEnum<'a> {
-        match self {
-            TyKind::Int => BasicMetadataTypeEnum::IntType(context.i64_type()),
-            TyKind::Float => BasicMetadataTypeEnum::FloatType(context.f64_type()),
-            TyKind::String => BasicMetadataTypeEnum::PointerType(
-                context.i8_type().ptr_type(AddressSpace::from(0)),
-            ),
-            TyKind::Boolean => BasicMetadataTypeEnum::IntType(context.bool_type()),
-            TyKind::Array(ty) => BasicMetadataTypeEnum::ArrayType(
-                ty.kind.to_llvm_type_meta(context).into_array_type(),
-            ),
-            _ => unimplemented!(),
-        }
-    }
-
-    pub fn to_llvm_type<'a>(&self, context: &'a Context) -> BasicTypeEnum<'a> {
+    pub fn to_llvm_type<'a>(
+        &self,
+        context: &'a Context,
+        symbol_table: SymbolTable<'a>,
+    ) -> BasicTypeEnum<'a> {
         match self {
             TyKind::Int => context.i64_type().into(),
             TyKind::Float => context.f64_type().into(),
             TyKind::String => context.i8_type().into(),
             TyKind::Boolean => context.bool_type().into(),
-            TyKind::Array(ty) => ty
+            TyKind::Array(ty, size) => ty
                 .kind
-                .to_llvm_type(context)
+                .to_llvm_type(context, symbol_table)
+                .array_type(*size as u32)
                 .ptr_type(AddressSpace::from(0))
                 .into(),
+            TyKind::Custom(identifier) => {
+                // let struct_type = context.opaque_struct_type(identifier);
+                // struct_type.set_body(&[], false);
+                // BasicMetadataTypeEnum::StructType(struct_type)
+
+                let (struct_type, _) = symbol_table.structs.get(identifier).unwrap();
+                struct_type.ptr_type(AddressSpace::from(0)).into()
+            }
             _ => unimplemented!(),
+        }
+    }
+
+    pub fn analyzed(&self, _: &Context, symbol_table: SymbolTable) -> TyKind {
+        match self {
+            TyKind::Custom(identifier) => {
+                let (_, struct_type) = symbol_table.structs.get(identifier).unwrap();
+                TyKind::Struct(struct_type.clone())
+            }
+            other => other.clone(),
         }
     }
 }
 
-impl From<BasicTypeEnum<'_>> for TyKind {
-    fn from(basic_type: BasicTypeEnum) -> Self {
-        match basic_type {
-            BasicTypeEnum::IntType(_) => Self::Int,
-            BasicTypeEnum::FloatType(_) => Self::Float,
-            BasicTypeEnum::PointerType(_) => Self::String,
-            BasicTypeEnum::ArrayType(array_type) => Self::Array(Box::new(Ty::new(
-                TyKind::from(array_type.array_type(0).as_basic_type_enum()),
-                Position(0, 0),
-            ))),
-            _ => unimplemented!(),
-        }
-    }
-}
+// impl From<BasicTypeEnum<'_>> for TyKind {
+//     fn from(basic_type: BasicTypeEnum) -> Self {
+//         match basic_type {
+//             BasicTypeEnum::IntType(_) => Self::Int,
+//             BasicTypeEnum::FloatType(_) => Self::Float,
+//             BasicTypeEnum::PointerType(_) => Self::String,
+//             BasicTypeEnum::ArrayType(array_type) => Self::Array(
+//                 Box::new(Ty::new(
+//                     TyKind::from(array_type.array_type(0).as_basic_type_enum()),
+//                     Position(0, 0),
+//                 )),
+//                 array_type.len() as usize,
+//             ),
+//             _ => unimplemented!(),
+//         }
+//     }
+// }
 
 pub type IdentifierGeneric = Vec<Identifier>;
-
-impl fmt::Display for FunctionType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        let parameters = self
-            .parameters
-            .iter()
-            .map(|parameter| parameter.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        let generics = match &self.generics {
-            Some(generics) => {
-                let generics = generics
-                    .iter()
-                    .map(|generic| generic.value.clone())
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                format!("<{generics}>")
-            }
-            None => String::new(),
-        };
-        write!(f, "fn{generics}({parameters}) -> {}", self.return_type)
-    }
-}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Generic(pub Box<Ty>, pub Vec<Ty>);
@@ -172,8 +163,76 @@ impl fmt::Display for Ty {
 pub struct FunctionType {
     pub generics: Option<IdentifierGeneric>,
     pub parameters: Vec<Ty>,
-    pub return_type: Box<Ty>,
+    pub ret: Box<Ty>,
     pub position: Position,
+}
+
+impl fmt::Display for FunctionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        let parameters = self
+            .parameters
+            .iter()
+            .map(|parameter| parameter.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let generics = match &self.generics {
+            Some(generics) => {
+                let generics = generics
+                    .iter()
+                    .map(|generic| generic.value.clone())
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("<{generics}>")
+            }
+            None => String::new(),
+        };
+        write!(f, "fn{generics}({parameters}) -> {}", self.ret)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct StructType {
+    pub generics: Option<IdentifierGeneric>,
+    pub fields: Vec<StructField>,
+    pub position: Position,
+}
+
+impl fmt::Display for StructType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        let fields = self
+            .fields
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let generics = match &self.generics {
+            Some(generics) => {
+                let generics = generics
+                    .iter()
+                    .map(|generic| generic.value.clone())
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                format!("<{generics}>")
+            }
+            None => String::new(),
+        };
+        write!(f, "struct{generics}{{{fields}}}",)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct StructField {
+    pub identifier: Identifier,
+    pub ty: Ty,
+    pub position: Position,
+}
+
+impl fmt::Display for StructField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}: {}", self.identifier.value, self.ty)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, PartialOrd)]

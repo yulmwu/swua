@@ -20,6 +20,15 @@ macro_rules! scalar_type {
                 pub value: $ty,
                 pub position: Position,
             }
+
+            impl From<$ty> for $name {
+                fn from(value: $ty) -> Self {
+                    Self {
+                        value,
+                        position: Position::default(),
+                    }
+                }
+            }
         )*
     }
 }

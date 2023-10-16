@@ -1,4 +1,6 @@
-use super::{Expression, FunctionLiteral, Identifier, IdentifierGeneric, Position, Ty, StructField};
+use super::{
+    Expression, FunctionLiteral, Identifier, IdentifierGeneric, Position, StructField, Ty,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
@@ -32,7 +34,7 @@ pub struct ExternFunctionDeclaration {
     pub identifier: Identifier,
     pub parameters: Vec<Ty>,
     pub ret: Ty,
-    pub generics: IdentifierGeneric,
+    pub generics: Option<IdentifierGeneric>,
     pub position: Position,
 }
 
@@ -40,7 +42,7 @@ pub struct ExternFunctionDeclaration {
 pub struct TypeStatement {
     pub identifier: Identifier,
     pub ty: Ty,
-    pub generics: IdentifierGeneric,
+    pub generics: Option<IdentifierGeneric>,
     pub position: Position,
 }
 
@@ -54,7 +56,7 @@ pub struct DeclareStatement {
 #[derive(Debug, PartialEq, Clone)]
 pub struct StructStatement {
     pub identifier: Identifier,
-    pub generics: IdentifierGeneric,
+    pub generics: Option<IdentifierGeneric>,
     pub fields: Vec<StructField>,
     pub position: Position,
 }
