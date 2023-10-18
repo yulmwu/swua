@@ -14,7 +14,7 @@ fn main() {
 // };
 
 extern fn print(int) -> int;
-// extern fn print_str(string) -> int;
+extern fn print_str(string) -> int;
 extern fn print_array(int, int) -> int;
 // extern fn printf(string) -> int;
 // extern fn print_struct(Foo) -> int;
@@ -24,12 +24,19 @@ fn main() -> int {
     // print_struct(foo);
     // print(foo[a]);
 
-    // let x: int[5] = [int; 1, 2, 3, 4, 5];
-    print_array([int; 1, 2, 3, 4, 5], 5);
+    // let x: int[] = [int; 1, 2, 3, 4, 5];
+    // print_array(x, 5);
     // print(x[1]);
 
     // let a: int = 1;
     // print(a);
+
+    // let x: string = "Hello World!";
+    // print_str(x);
+
+    // let y: string[] = [string; "Hello", "World!"];
+    // print_str(y[0]);
+    // print_str(y[1]);
 
     return 0;
 }

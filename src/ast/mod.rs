@@ -22,7 +22,7 @@ pub enum TyKind {
     Float,
     String,
     Boolean,
-    Array(Box<Ty>, usize),
+    Array(Box<Ty>),
     Fn(FunctionType),
     Struct(StructType),
     Generic(Generic),
@@ -36,7 +36,7 @@ impl fmt::Display for TyKind {
             TyKind::Int | TyKind::Float | TyKind::String | TyKind::Boolean => {
                 write!(f, "{self:?}")
             }
-            TyKind::Array(ty, size) => write!(f, "{}[{}]", ty.kind, size),
+            TyKind::Array(ty) => write!(f, "{}[]", ty.kind),
             TyKind::Fn(function_type) => write!(f, "{function_type}"),
             TyKind::Struct(struct_type) => write!(f, "{struct_type}"),
             TyKind::Generic(generic) => write!(f, "{generic}"),
@@ -55,12 +55,11 @@ impl TyKind {
         match self {
             TyKind::Int => context.i64_type().into(),
             TyKind::Float => context.f64_type().into(),
-            TyKind::String => context.i8_type().into(),
+            TyKind::String => context.i8_type().ptr_type(AddressSpace::from(0)).into(),
             TyKind::Boolean => context.bool_type().into(),
-            TyKind::Array(ty, size) => ty
+            TyKind::Array(ty) => ty
                 .kind
                 .to_llvm_type(context, symbol_table)
-                .array_type(*size as u32)
                 .ptr_type(AddressSpace::from(0))
                 .into(),
             TyKind::Custom(identifier) => {

@@ -247,13 +247,11 @@ impl<'ctx> Compiler<'ctx> {
                     values.push(self.compile_expression(val).0);
                 }
 
-                let ty = TyKind::Array(Box::new(arr.ty.clone()), values.len());
-                let array_ty = ty.to_llvm_type(self.context, self.symbol_table.clone());
-                let ptr = self
-                    .builder
-                    .build_alloca(array_ty, "array")
-                    .as_basic_value_enum()
-                    .into_pointer_value();
+                let ty = TyKind::Array(Box::new(arr.ty.clone()));
+                let array_ty = ty
+                    .to_llvm_type(self.context, self.symbol_table.clone())
+                    .array_type(values.len() as u32);
+                let ptr = self.builder.build_alloca(array_ty, "array");
 
                 for (i, val) in values.iter().enumerate() {
                     let index = self.context.i64_type().const_int(i as u64, false);
@@ -322,13 +320,19 @@ impl<'ctx> Compiler<'ctx> {
     ) -> (BasicValueEnum<'ctx>, TyKind) {
         let name = ident.value;
 
-        let (alloca, ty) = self.symbol_table.variables.get(&name).unwrap();
-        let ptr_ty = ty.to_llvm_type(self.context, self.symbol_table.clone());
-
-        (
-            self.builder.build_load(ptr_ty, *alloca, name.as_str()),
-            ty.clone(),
-        )
+        match self.symbol_table.variables.get(&name) {
+            Some((ptr, ty)) => (
+                self.builder
+                    .build_load(
+                        ty.to_llvm_type(self.context, self.symbol_table.clone()),
+                        *ptr,
+                        name.as_str(),
+                    )
+                    .as_basic_value_enum(),
+                ty.clone(),
+            ),
+            None => panic!("Unknown variable: {}", name),
+        }
     }
 
     fn compile_call_expression(&mut self, call: CallExpression) -> (BasicValueEnum<'ctx>, TyKind) {
@@ -466,7 +470,7 @@ impl<'ctx> Compiler<'ctx> {
         let left = self.compile_expression(*index.clone().left);
 
         match left.1 {
-            TyKind::Array(_, _) => self.compile_array_index_expression(index, left),
+            TyKind::Array(_) => self.compile_array_index_expression(index, left),
             TyKind::Custom(_) => self.compile_struct_index_expression(index, left),
             _ => panic!("Unknown type: {:?}", left.1),
         }
@@ -481,22 +485,24 @@ impl<'ctx> Compiler<'ctx> {
 
         match index.1 {
             TyKind::Int => {
+                let element_ty = match left.1 {
+                    TyKind::Array(ty) => ty.kind,
+                    _ => unreachable!(),
+                };
+                let element_ll_ty =
+                    element_ty.to_llvm_type(self.context, self.symbol_table.clone());
+
                 let ptr = unsafe {
                     self.builder.build_gep(
-                        self.context.i64_type(),
+                        element_ll_ty,
                         left.0.into_pointer_value(),
                         &[index.0.into_int_value()],
                         "ptr",
                     )
                 };
 
-                let element_ty = match left.1 {
-                    TyKind::Array(ty, _) => ty.kind,
-                    _ => unreachable!(),
-                };
                 (
-                    self.builder
-                        .build_load(self.context.i64_type(), ptr, "load"),
+                    self.builder.build_load(element_ll_ty, ptr, "load"),
                     element_ty,
                 )
             }
