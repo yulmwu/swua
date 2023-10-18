@@ -898,25 +898,11 @@ impl<'a> Parser<'a> {
             self.next_token();
             self.next_token();
 
-            match self.parse_expression(&Priority::Lowest)? {
-                Expression::Literal(Literal::Int(IntLiteral { value, .. })) => {
-                    ty = Ok(TyKind::Array(
-                        Box::new(Ty {
-                            kind: ty?,
-                            position: self.position,
-                        }),
-                        value as usize,
-                    ));
-                }
-                _ => {
-                    return Err(ParsingError::expected_expression(
-                        "Int".to_string(),
-                        self.position,
-                    ))
-                }
-            }
+            ty = Ok(TyKind::Array(Box::new(Ty {
+                kind: ty?,
+                position: self.position,
+            })));
 
-            self.next_token();
             if self.current_token.kind != TokenKind::RBracket {
                 return Err(ParsingError::expected_next_token(
                     TokenKind::RBracket.to_string(),
