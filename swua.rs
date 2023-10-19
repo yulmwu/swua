@@ -25,8 +25,8 @@ pub extern "C" fn print_array(x: *const i64, len: i64) -> i64 {
 }
 
 #[no_mangle]
-pub extern "C" fn print_struct(x: *const i64) -> i64 {
-    let slice = unsafe { std::slice::from_raw_parts(x, 2) };
+pub extern "C" fn print_struct(x: *const i64, len: i64) -> i64 {
+    let slice = unsafe { std::slice::from_raw_parts(x, len as usize) };
     println!("out> {:?}", slice);
 
     0

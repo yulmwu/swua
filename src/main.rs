@@ -8,35 +8,18 @@ fn main() {
 
     let lexer = Lexer::new(
         r#"
-// struct Foo {
-//     a: int,
-//     b: int
-// };
-
 extern fn print(int) -> int;
 extern fn print_str(string) -> int;
 extern fn print_array(int, int) -> int;
 // extern fn printf(string) -> int;
-// extern fn print_struct(Foo) -> int;
+// extern fn print_struct(Foo, int) -> int;
 
 fn main() -> int {
-    // let foo: Foo = struct Foo { a: 1, b: 2 };
-    // print_struct(foo);
-    // print(foo[a]);
-
-    // let x: int[] = [int; 1, 2, 3, 4, 5];
-    // print_array(x, 5);
-    // print(x[1]);
-
-    // let a: int = 1;
-    // print(a);
-
-    // let x: string = "Hello World!";
-    // print_str(x);
-
-    // let y: string[] = [string; "Hello", "World!"];
-    // print_str(y[0]);
-    // print_str(y[1]);
+    let x = [string; "Hello", "World!"];
+    let index_0 = x[0];
+    print_str(x[0]);
+    print_str(x[1]);
+    print_str(index_0);
 
     return 0;
 }
