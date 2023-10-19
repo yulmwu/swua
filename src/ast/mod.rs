@@ -62,23 +62,22 @@ impl TyKind {
                 .to_llvm_type(context, symbol_table)
                 .ptr_type(AddressSpace::from(0))
                 .into(),
-            TyKind::Custom(identifier) => {
-                // let struct_type = context.opaque_struct_type(identifier);
-                // struct_type.set_body(&[], false);
-                // BasicMetadataTypeEnum::StructType(struct_type)
+            TyKind::Custom(_identifier) => {
+                // let (struct_type, _, _) = symbol_table.structs.get(identifier).unwrap();
+                // struct_type.ptr_type(AddressSpace::from(0)).into()
 
-                let (struct_type, _) = symbol_table.structs.get(identifier).unwrap();
-                struct_type.ptr_type(AddressSpace::from(0)).into()
+                todo!()
             }
             _ => unimplemented!(),
         }
     }
 
-    pub fn analyzed(&self, _: &Context, symbol_table: SymbolTable) -> TyKind {
+    pub fn analyzed(&self, _: &Context, _symbol_table: SymbolTable) -> TyKind {
         match self {
-            TyKind::Custom(identifier) => {
-                let (_, struct_type) = symbol_table.structs.get(identifier).unwrap();
-                TyKind::Struct(struct_type.clone())
+            TyKind::Custom(_identifier) => {
+                // let (_, struct_type, _) = symbol_table.structs.get(identifier).unwrap();
+                // TyKind::Struct(struct_type.clone())
+                todo!()
             }
             other => other.clone(),
         }
@@ -192,6 +191,7 @@ impl fmt::Display for FunctionType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StructType {
+    pub identifier: Identifier,
     pub generics: Option<IdentifierGeneric>,
     pub fields: Vec<StructField>,
     pub position: Position,
@@ -217,7 +217,11 @@ impl fmt::Display for StructType {
             }
             None => String::new(),
         };
-        write!(f, "struct{generics}{{{fields}}}",)
+        write!(
+            f,
+            "struct {}{generics} {{ {fields} }}",
+            self.identifier.value
+        )
     }
 }
 
