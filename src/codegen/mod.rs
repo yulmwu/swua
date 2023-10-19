@@ -1,4 +1,6 @@
+use self::infer::infer_expression;
 use crate::ast::*;
+use core::panic;
 use inkwell::{
     builder::Builder,
     context::Context,
@@ -8,11 +10,13 @@ use inkwell::{
 };
 use std::collections::HashMap;
 
-#[derive(Debug, PartialEq, Clone, Default)]
+pub mod infer;
+
+#[derive(Debug, Clone, Default)]
 pub struct SymbolTable<'a> {
+    /// Variable name, (llvm pointer, type)
     pub variables: HashMap<String, (PointerValue<'a>, TyKind)>,
-    pub structs: HashMap<String, (types::StructType<'a>, StructType)>,
-    pub struct_fields: HashMap<PointerValue<'a>, TyKind>,
+    /// Function name, (llvm function type, function type)
     pub functions: HashMap<String, (types::FunctionType<'a>, FunctionType)>,
 }
 
@@ -74,7 +78,15 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_let_statement(&mut self, stmt: LetStatement) {
         let name = stmt.identifier.value;
         let initializer = stmt.value;
-        let ty = stmt.ty.expect("TODO").kind;
+        // let ty = stmt.ty.expect("TODO").kind;
+        let ty = match stmt.ty {
+            Some(ty) => ty.kind,
+            None if initializer.is_some() => {
+                infer_expression(initializer.clone().unwrap(), &self.symbol_table)
+            }
+            _ => panic!("TODO"),
+        };
+        println!("ty: {:?}", ty);
 
         let alloca = self
             .builder
@@ -471,7 +483,7 @@ impl<'ctx> Compiler<'ctx> {
 
         match left.1 {
             TyKind::Array(_) => self.compile_array_index_expression(index, left),
-            TyKind::Custom(_) => self.compile_struct_index_expression(index, left),
+            TyKind::Struct(_) => self.compile_struct_index_expression(index, left),
             _ => panic!("Unknown type: {:?}", left.1),
         }
     }
@@ -512,90 +524,49 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_struct_index_expression(
         &mut self,
-        index: IndexExpression,
-        left: (BasicValueEnum<'ctx>, TyKind),
+        _index: IndexExpression,
+        _left: (BasicValueEnum<'ctx>, TyKind),
     ) -> (BasicValueEnum<'ctx>, TyKind) {
-        let index = self.compile_expression(*index.index);
-
-        match index.1 {
-            TyKind::Int => {
-                let ptr = unsafe {
-                    self.builder.build_gep(
-                        self.context.i64_type(),
-                        left.0.into_pointer_value(),
-                        &[index.0.into_int_value()],
-                        "ptr",
-                    )
-                };
-
-                let element_ty = match left.0 {
-                    BasicValueEnum::PointerValue(ptr) => {
-                        self.symbol_table.struct_fields.get(&ptr).unwrap().clone()
-                    }
-                    _ => unreachable!(),
-                };
-                (
-                    self.builder
-                        .build_load(self.context.i64_type(), ptr, "load"),
-                    element_ty,
-                )
-            }
-            _ => panic!("Unknown type: {:?}", index.1),
-        }
+        todo!()
     }
 
-    fn compile_struct_statement(&mut self, stmt: StructStatement) {
-        let StructStatement {
-            identifier: Identifier { value: name, .. },
-            generics,
-            fields,
-            position,
-        } = stmt;
+    fn compile_struct_statement(&mut self, _stmt: StructStatement) {
+        // let StructStatement {
+        //     identifier: Identifier { value: name, .. },
+        //     generics,
+        //     fields,
+        //     position,
+        // } = stmt;
 
-        let mut fields_ty = Vec::new();
+        // let mut fields_ty = Vec::new();
+        // let mut fields_index = HashMap::new();
 
-        for (index, field) in fields.iter().enumerate() {
-            fields_ty.push(
-                field
-                    .ty
-                    .kind
-                    .to_llvm_type(self.context, self.symbol_table.clone()),
-            );
+        // for (index, field) in fields.iter().enumerate() {
+        //     fields_ty.push(
+        //         field
+        //             .ty
+        //             .kind
+        //             .to_llvm_type(self.context, self.symbol_table.clone()),
+        //     );
 
-            // global struct.field = index
-            let global = self.module.add_global(
-                self.context.i64_type(),
-                None,
-                format!("{}.{}", name, field.identifier.value).as_str(),
-            );
+        //     // global struct.field = index
+        //     let global = self.module.add_global(
+        //         self.context.i64_type(),
+        //         None,
+        //         format!("{}.{}", name, field.identifier.value).as_str(),
+        //     );
 
-            global.set_initializer(&self.context.i64_type().const_int(index as u64, false));
+        //     global.set_initializer(&self.context.i64_type().const_int(index as u64, false));
 
-            self.symbol_table.variables.insert(
-                format!("{}.{}", name, field.identifier.value),
-                (global.as_pointer_value(), field.ty.kind.clone()),
-            );
+        //     fields_index.insert(index, field.ty.kind.clone());
+        // }
 
-            self.symbol_table
-                .struct_fields
-                .insert(global.as_pointer_value(), field.ty.kind.clone());
-        }
+        // let struct_ty = self.context.opaque_struct_type(name.as_str());
 
-        let struct_ty = self.context.opaque_struct_type(name.as_str());
+        // struct_ty.set_body(fields_ty.as_slice(), false);
 
-        struct_ty.set_body(fields_ty.as_slice(), false);
+        // self.module.add_global(struct_ty, None, name.as_str());
 
-        self.module.add_global(struct_ty, None, name.as_str());
-        self.symbol_table.structs.insert(
-            name,
-            (
-                struct_ty,
-                StructType {
-                    generics,
-                    fields,
-                    position,
-                },
-            ),
-        );
+        todo!()
     }
 }
