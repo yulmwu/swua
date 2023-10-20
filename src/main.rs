@@ -15,11 +15,14 @@ extern fn print_array(int, int) -> int;
 // extern fn print_struct(Foo, int) -> int;
 
 fn main() -> int {
-    let x = [string; "Hello", "World!"];
+    let x = ["Hello", "World!"];
     let index_0 = x[0];
     print_str(x[0]);
     print_str(x[1]);
     print_str(index_0);
+
+    print_array([1, 2, 3], 3);
+    print([1, 2, 3][2]);
 
     return 0;
 }
