@@ -12,8 +12,6 @@ pub use literal::*;
 pub use statement::*;
 use std::fmt;
 
-use crate::codegen::SymbolTable;
-
 pub type Program = Vec<Statement>;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -47,11 +45,7 @@ impl fmt::Display for TyKind {
 }
 
 impl TyKind {
-    pub fn to_llvm_type<'a>(
-        &self,
-        context: &'a Context,
-        symbol_table: SymbolTable<'a>,
-    ) -> BasicTypeEnum<'a> {
+    pub fn to_llvm_type<'a>(&self, context: &'a Context) -> BasicTypeEnum<'a> {
         match self {
             TyKind::Int => context.i64_type().into(),
             TyKind::Float => context.f64_type().into(),
@@ -59,48 +53,22 @@ impl TyKind {
             TyKind::Boolean => context.bool_type().into(),
             TyKind::Array(ty) => ty
                 .kind
-                .to_llvm_type(context, symbol_table)
+                .to_llvm_type(context)
                 .ptr_type(AddressSpace::from(0))
                 .into(),
-            TyKind::Custom(_identifier) => {
-                // let (struct_type, _, _) = symbol_table.structs.get(identifier).unwrap();
-                // struct_type.ptr_type(AddressSpace::from(0)).into()
-
-                todo!()
-            }
             _ => unimplemented!(),
         }
     }
 
-    pub fn analyzed(&self, _: &Context, _symbol_table: SymbolTable) -> TyKind {
+    pub fn analyzed(&self, _: &Context) -> TyKind {
         match self {
-            TyKind::Custom(_identifier) => {
-                // let (_, struct_type, _) = symbol_table.structs.get(identifier).unwrap();
-                // TyKind::Struct(struct_type.clone())
+            TyKind::Custom(_) => {
                 todo!()
             }
             other => other.clone(),
         }
     }
 }
-
-// impl From<BasicTypeEnum<'_>> for TyKind {
-//     fn from(basic_type: BasicTypeEnum) -> Self {
-//         match basic_type {
-//             BasicTypeEnum::IntType(_) => Self::Int,
-//             BasicTypeEnum::FloatType(_) => Self::Float,
-//             BasicTypeEnum::PointerType(_) => Self::String,
-//             BasicTypeEnum::ArrayType(array_type) => Self::Array(
-//                 Box::new(Ty::new(
-//                     TyKind::from(array_type.array_type(0).as_basic_type_enum()),
-//                     Position(0, 0),
-//                 )),
-//                 array_type.len() as usize,
-//             ),
-//             _ => unimplemented!(),
-//         }
-//     }
-// }
 
 pub type IdentifierGeneric = Vec<Identifier>;
 
