@@ -1,6 +1,11 @@
-use self::infer::{infer_expression, infer_literal};
+pub mod error;
+pub mod infer;
+
+use self::{
+    error::{CompileError, CompileResult},
+    infer::{infer_expression, infer_literal},
+};
 use crate::ast::*;
-use core::panic;
 use inkwell::{
     builder::Builder,
     context::Context,
@@ -10,7 +15,8 @@ use inkwell::{
 };
 use std::collections::HashMap;
 
-pub mod infer;
+/// (llvm value, type)
+type ExpressionReturn<'ctx> = (BasicValueEnum<'ctx>, TyKind);
 
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTable<'a> {
@@ -41,66 +47,88 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    pub fn compile_module(&mut self, name: String, program: Program) {
+    pub fn compile_module(&mut self, name: String, program: Program) -> CompileResult<()> {
         self.module = self.context.create_module(name.as_str());
 
         for stmt in program {
-            self.compile_statement(stmt);
+            self.compile_statement(stmt)?;
         }
+
+        Ok(())
     }
 
-    pub fn compile_statement(&mut self, stmt: Statement) {
+    pub fn compile_statement(&mut self, stmt: Statement) -> CompileResult<()> {
         match stmt {
-            Statement::LetStatement(stmt) => self.compile_let_statement(stmt),
-            Statement::FunctionDeclaration(func) => self.compile_function_declaration(func),
+            Statement::LetStatement(stmt) => self.compile_let_statement(stmt)?,
+            Statement::FunctionDeclaration(func) => self.compile_function_declaration(func)?,
             Statement::ExternFunctionDeclaration(func) => {
-                self.compile_external_function_declaration(func)
+                self.compile_external_function_declaration(func)?
             }
-            Statement::StructStatement(stmt) => self.compile_struct_statement(stmt),
+            Statement::StructStatement(stmt) => self.compile_struct_statement(stmt)?,
             Statement::ExpressionStatement(expr) => {
-                self.compile_expression(expr.expression);
+                self.compile_expression(expr.expression)?;
             }
             _ => unimplemented!(),
         }
+
+        Ok(())
     }
 
-    pub fn compile_expression(&mut self, expr: Expression) -> (BasicValueEnum<'ctx>, TyKind) {
+    pub fn compile_expression(
+        &mut self,
+        expr: Expression,
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
         let (value, ty) = match expr {
-            Expression::Literal(lit) => self.compile_literal_expression(lit),
-            Expression::CallExpression(call) => self.compile_call_expression(call),
-            Expression::InfixExpression(infix) => self.compile_infix_expression(infix),
-            Expression::IndexExpression(index) => self.compile_index_expression(index),
-            _ => unimplemented!(),
-        };
-        (value, ty.analyzed(self.context, self.symbol_table.clone()))
+            Expression::AssignmentExpression(expr) => self.compile_assignment_expression(expr),
+            Expression::BlockExpression(_) => todo!(),
+            Expression::PrefixExpression(_) => todo!(),
+            Expression::InfixExpression(expr) => self.compile_infix_expression(expr),
+            Expression::IfExpression(_) => todo!(),
+            Expression::CallExpression(expr) => self.compile_call_expression(expr),
+            Expression::TypeofExpression(_) => todo!(),
+            Expression::IndexExpression(expr) => self.compile_index_expression(expr),
+            Expression::Literal(literal) => self.compile_literal_expression(literal),
+            Expression::Debug(_, _) => todo!(),
+        }?;
+        Ok((value, ty.analyzed(self.context)))
     }
 
-    fn compile_let_statement(&mut self, stmt: LetStatement) {
-        let name = stmt.identifier.value;
-        let initializer = stmt.value;
-        // let ty = stmt.ty.expect("TODO").kind;
-        let ty = match stmt.ty {
+    fn compile_let_statement(&mut self, stmt: LetStatement) -> CompileResult<()> {
+        let LetStatement {
+            identifier: Identifier { value: name, .. },
+            value: initializer,
+            ty,
+            position,
+            ..
+        } = stmt;
+
+        let ty = match ty {
             Some(ty) => ty.kind,
             None if initializer.is_some() => {
-                infer_expression(initializer.clone().unwrap(), &self.symbol_table)
+                let initializer = match initializer.clone() {
+                    Some(expr) => expr,
+                    None => return Err(CompileError::expected("Initializer", position)),
+                };
+                infer_expression(initializer, &self.symbol_table)?
             }
-            _ => panic!("TODO"),
+            _ => todo!(),
         };
-        println!("ty: {:?}", ty);
 
         let alloca = self
             .builder
             .build_alloca(self.context.i64_type(), name.as_str());
 
         if let Some(expr) = initializer {
-            let value = self.compile_expression(expr).0;
+            let value = self.compile_expression(expr)?.0;
             self.builder.build_store(alloca, value);
         }
 
         self.symbol_table.variables.insert(name, (alloca, ty));
+
+        Ok(())
     }
 
-    fn compile_function_declaration(&mut self, func: FunctionDeclaration) {
+    fn compile_function_declaration(&mut self, func: FunctionDeclaration) -> CompileResult<()> {
         let FunctionDeclaration {
             identifier: Identifier { value: name, .. },
             function:
@@ -116,13 +144,7 @@ impl<'ctx> Compiler<'ctx> {
 
         let parameters_ty = parameters
             .iter()
-            .map(|param| {
-                param
-                    .ty
-                    .kind
-                    .to_llvm_type(self.context, self.symbol_table.clone())
-                    .into()
-            })
+            .map(|param| param.ty.kind.to_llvm_type(self.context).into())
             .collect::<Vec<_>>();
         let function_type = self
             .context
@@ -163,24 +185,29 @@ impl<'ctx> Compiler<'ctx> {
 
         for stmt in body.statements {
             match stmt {
-                Statement::LetStatement(stmt) => self.compile_let_statement(stmt),
-                Statement::FunctionDeclaration(func) => self.compile_function_declaration(func),
+                Statement::LetStatement(stmt) => self.compile_let_statement(stmt)?,
+                Statement::FunctionDeclaration(func) => self.compile_function_declaration(func)?,
                 Statement::ReturnStatement(expr) => {
-                    let value = self.compile_expression(expr.value).0;
+                    let value = self.compile_expression(expr.value)?.0;
                     self.builder.build_return(Some(&value));
 
                     break;
                 }
-                Statement::StructStatement(stmt) => self.compile_struct_statement(stmt),
+                Statement::StructStatement(stmt) => self.compile_struct_statement(stmt)?,
                 Statement::ExpressionStatement(expr) => {
-                    self.compile_expression(expr.expression);
+                    self.compile_expression(expr.expression)?;
                 }
                 _ => unimplemented!(),
             }
         }
+
+        Ok(())
     }
 
-    fn compile_external_function_declaration(&mut self, func: ExternFunctionDeclaration) {
+    fn compile_external_function_declaration(
+        &mut self,
+        func: ExternFunctionDeclaration,
+    ) -> CompileResult<()> {
         let ExternFunctionDeclaration {
             identifier: Identifier { value: name, .. },
             parameters,
@@ -189,22 +216,14 @@ impl<'ctx> Compiler<'ctx> {
             position,
         } = func;
 
-        let function_type = ret
-            .kind
-            .to_llvm_type(self.context, self.symbol_table.clone())
-            .fn_type(
-                parameters
-                    .iter()
-                    .map(|param| {
-                        param
-                            .kind
-                            .to_llvm_type(self.context, self.symbol_table.clone())
-                            .into()
-                    })
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-                false,
-            );
+        let function_type = ret.kind.to_llvm_type(self.context).fn_type(
+            parameters
+                .iter()
+                .map(|param| param.kind.to_llvm_type(self.context).into())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            false,
+        );
 
         self.module.add_function(name.as_str(), function_type, None);
 
@@ -220,11 +239,16 @@ impl<'ctx> Compiler<'ctx> {
                 },
             ),
         );
+
+        Ok(())
     }
 
-    fn compile_literal_expression(&mut self, lit: Literal) -> (BasicValueEnum<'ctx>, TyKind) {
-        match lit {
-            Literal::Identifier(ident) => self.compile_identifier_expression(ident),
+    fn compile_literal_expression(
+        &mut self,
+        lit: Literal,
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
+        Ok(match lit {
+            Literal::Identifier(ident) => self.compile_identifier_expression(ident)?,
             Literal::Int(i) => (
                 self.context
                     .i64_type()
@@ -256,12 +280,12 @@ impl<'ctx> Compiler<'ctx> {
                 let mut values: Vec<BasicValueEnum> = Vec::new();
 
                 for val in arr.clone().elements {
-                    values.push(self.compile_expression(val).0);
+                    values.push(self.compile_expression(val)?.0);
                 }
 
-                let ty = infer_literal(Literal::Array(arr), &self.symbol_table);
+                let ty = infer_literal(Literal::Array(arr), &self.symbol_table)?;
                 let array_ty = ty
-                    .to_llvm_type(self.context, self.symbol_table.clone())
+                    .to_llvm_type(self.context)
                     .array_type(values.len() as u32);
                 let ptr = self.builder.build_alloca(array_ty, "array");
 
@@ -282,21 +306,17 @@ impl<'ctx> Compiler<'ctx> {
 
                 (ptr.as_basic_value_enum(), ty)
             }
-            // Literal::ArrayHeap(arr) => {
-            //     /*
-            //     | len | capacity | ptr |
-            //     */
-
-            //     let struct_ty = self.module.get_struct_type("Array").unwrap();
-            // }
             Literal::Struct(struct_lit) => {
                 let name = struct_lit.identifier.value;
-                let struct_ty = self.module.get_struct_type(name.as_str()).unwrap();
+                let struct_ty = match self.module.get_struct_type(name.as_str()) {
+                    Some(ty) => ty,
+                    None => return Err(CompileError::struct_not_found(name, struct_lit.position)),
+                };
 
                 let mut values: Vec<BasicValueEnum> = Vec::new();
 
                 for val in struct_lit.fields {
-                    values.push(self.compile_expression(val.1).0);
+                    values.push(self.compile_expression(val.1)?.0);
                 }
 
                 let ptr = self
@@ -323,94 +343,137 @@ impl<'ctx> Compiler<'ctx> {
                 (ptr.as_basic_value_enum(), TyKind::Custom(name))
             }
             _ => unimplemented!(),
-        }
+        })
     }
 
     fn compile_identifier_expression(
         &mut self,
         ident: Identifier,
-    ) -> (BasicValueEnum<'ctx>, TyKind) {
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
         let name = ident.value;
 
-        match self.symbol_table.variables.get(&name) {
+        Ok(match self.symbol_table.variables.get(&name) {
             Some((ptr, ty)) => (
                 self.builder
-                    .build_load(
-                        ty.to_llvm_type(self.context, self.symbol_table.clone()),
-                        *ptr,
-                        name.as_str(),
-                    )
+                    .build_load(ty.to_llvm_type(self.context), *ptr, name.as_str())
                     .as_basic_value_enum(),
                 ty.clone(),
             ),
-            None => panic!("Unknown variable: {}", name),
-        }
+            None => return Err(CompileError::identifier_not_found(name, ident.position)),
+        })
     }
 
-    fn compile_call_expression(&mut self, call: CallExpression) -> (BasicValueEnum<'ctx>, TyKind) {
+    fn compile_call_expression(
+        &mut self,
+        call: CallExpression,
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
         let CallExpression {
             function: callee,
             arguments,
-            ..
+            position,
         } = call;
 
-        let (function, (_, function_ty), name) = match *callee {
-            Expression::Literal(Literal::Identifier(ident)) => (
-                self.module.get_function(ident.value.as_str()).unwrap(),
-                self.symbol_table
-                    .functions
-                    .get(&ident.value)
-                    .unwrap()
-                    .clone(),
-                ident.value,
-            ),
-            _ => panic!("Expected identifier expression"),
+        let (function, (_, function_ty), name) = {
+            match *callee {
+                Expression::Literal(Literal::Identifier(ident)) => {
+                    let function = match self.module.get_function(ident.value.as_str()) {
+                        Some(function) => function,
+                        None => {
+                            return Err(CompileError::function_not_found(
+                                ident.value,
+                                ident.position,
+                            ))
+                        }
+                    };
+
+                    let ty = match self.symbol_table.functions.get(&ident.value) {
+                        Some(ty) => ty.clone(),
+                        None => {
+                            return Err(CompileError::function_not_found(
+                                ident.value,
+                                ident.position,
+                            ))
+                        }
+                    };
+                    (function, ty, ident.value)
+                }
+                _ => return Err(CompileError::expected("identifier", position)),
+            }
         };
 
         let mut args: Vec<BasicMetadataValueEnum> = Vec::new();
 
         for arg in arguments {
-            args.push(self.compile_expression(arg).0.into());
+            args.push(self.compile_expression(arg)?.0.into());
         }
 
-        (
-            self.builder
-                .build_call(function, args.as_slice(), format!("{name}.call").as_str())
-                .try_as_basic_value()
-                .left()
-                .unwrap(),
-            function_ty.ret.kind.clone(),
-        )
+        let llvm_value = match self
+            .builder
+            .build_call(function, args.as_slice(), format!("{name}.call").as_str())
+            .try_as_basic_value()
+            .left()
+        {
+            Some(value) => value,
+            None => return Err(CompileError::expected("return value", position)),
+        };
+
+        Ok((llvm_value, function_ty.ret.kind.clone()))
+    }
+
+    fn compile_assignment_expression(
+        &mut self,
+        assignment: AssignmentExpression,
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
+        let AssignmentExpression {
+            identifier: Identifier { value: name, .. },
+            value,
+            position,
+        } = assignment;
+
+        let llvm_value = self.compile_expression(*value.clone())?.0;
+
+        Ok(match self.symbol_table.variables.get(&name) {
+            Some((ptr, ty)) => {
+                self.builder.build_store(*ptr, llvm_value);
+
+                assert_eq!(ty.clone(), infer_expression(*value, &self.symbol_table)?);
+
+                (llvm_value, ty.clone())
+            }
+            None => return Err(CompileError::identifier_not_found(name, position)),
+        })
     }
 
     fn compile_infix_expression(
         &mut self,
         infix: InfixExpression,
-    ) -> (BasicValueEnum<'ctx>, TyKind) {
-        let operator = infix.operator;
-        let left = infix.left;
-        let right = infix.right;
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
+        let _infix = infix.clone();
+        let left = _infix.left;
+        let right = _infix.right;
 
-        let left = self.compile_expression(*left);
-        let right = self.compile_expression(*right);
+        let left = self.compile_expression(*left)?;
+        let right = self.compile_expression(*right)?;
 
         match (left.clone().1, right.1) {
-            (TyKind::Int, _) => self.compile_int_infix_expression(operator, left.0, right.0),
-            (TyKind::Float, _) => self.compile_float_infix_expression(operator, left.0, right.0),
-            _ => panic!("Unknown type: {:?}", left.1),
+            (TyKind::Int, _) => self.compile_int_infix_expression(infix, left.0, right.0),
+            (TyKind::Float, _) => self.compile_float_infix_expression(infix, left.0, right.0),
+            _ => Err(CompileError::unknown_type(left.1, infix.position)),
         }
     }
 
     fn compile_int_infix_expression(
         &mut self,
-        operator: InfixOperator,
+        infix: InfixExpression,
         left: BasicValueEnum<'ctx>,
         right: BasicValueEnum<'ctx>,
-    ) -> (BasicValueEnum<'ctx>, TyKind) {
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
         let left = left.into_int_value();
         let right = right.into_int_value();
 
-        (
+        let operator = infix.operator;
+
+        Ok((
             match operator {
                 InfixOperator::Plus => self
                     .builder
@@ -432,22 +495,24 @@ impl<'ctx> Compiler<'ctx> {
                     .builder
                     .build_int_signed_rem(left, right, "rem")
                     .as_basic_value_enum(),
-                _ => panic!("Unknown operator"),
+                _ => return Err(CompileError::unknown_operator(operator, infix.position)),
             },
             TyKind::Int,
-        )
+        ))
     }
 
     fn compile_float_infix_expression(
         &mut self,
-        operator: InfixOperator,
+        infix: InfixExpression,
         left: BasicValueEnum<'ctx>,
         right: BasicValueEnum<'ctx>,
-    ) -> (BasicValueEnum<'ctx>, TyKind) {
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
         let left = left.into_float_value();
         let right = right.into_float_value();
 
-        (
+        let operator = infix.operator;
+
+        Ok((
             match operator {
                 InfixOperator::Plus => self
                     .builder
@@ -469,46 +534,45 @@ impl<'ctx> Compiler<'ctx> {
                     .builder
                     .build_float_rem(left, right, "rem")
                     .as_basic_value_enum(),
-                _ => panic!("Unknown operator"),
+                _ => return Err(CompileError::unknown_operator(operator, infix.position)),
             },
             TyKind::Float,
-        )
+        ))
     }
 
     fn compile_index_expression(
         &mut self,
         index: IndexExpression,
-    ) -> (BasicValueEnum<'ctx>, TyKind) {
-        let left = self.compile_expression(*index.clone().left);
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
+        let left = self.compile_expression(*index.clone().left)?;
 
         match left.1 {
             TyKind::Array(_) => self.compile_array_index_expression(index, left),
             TyKind::Struct(_) => self.compile_struct_index_expression(index, left),
-            _ => panic!("Unknown type: {:?}", left.1),
+            _ => Err(CompileError::unknown_type(left.1, index.position)),
         }
     }
 
     fn compile_array_index_expression(
         &mut self,
         index: IndexExpression,
-        left: (BasicValueEnum<'ctx>, TyKind),
-    ) -> (BasicValueEnum<'ctx>, TyKind) {
-        let index = self.compile_expression(*index.index);
+        left: ExpressionReturn<'ctx>,
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
+        let compiled_index = self.compile_expression(*index.index)?;
 
-        match index.1 {
+        Ok(match compiled_index.1 {
             TyKind::Int => {
                 let element_ty = match left.1 {
                     TyKind::Array(ty) => ty.kind,
                     _ => unreachable!(),
                 };
-                let element_ll_ty =
-                    element_ty.to_llvm_type(self.context, self.symbol_table.clone());
+                let element_ll_ty = element_ty.to_llvm_type(self.context);
 
                 let ptr = unsafe {
                     self.builder.build_gep(
                         element_ll_ty,
                         left.0.into_pointer_value(),
-                        &[index.0.into_int_value()],
+                        &[compiled_index.0.into_int_value()],
                         "ptr",
                     )
                 };
@@ -518,55 +582,19 @@ impl<'ctx> Compiler<'ctx> {
                     element_ty,
                 )
             }
-            _ => panic!("Unknown type: {:?}", index.1),
-        }
+            _ => return Err(CompileError::unknown_type(compiled_index.1, index.position)),
+        })
     }
 
     fn compile_struct_index_expression(
         &mut self,
         _index: IndexExpression,
-        _left: (BasicValueEnum<'ctx>, TyKind),
-    ) -> (BasicValueEnum<'ctx>, TyKind) {
+        _left: ExpressionReturn<'ctx>,
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
         todo!()
     }
 
-    fn compile_struct_statement(&mut self, _stmt: StructStatement) {
-        // let StructStatement {
-        //     identifier: Identifier { value: name, .. },
-        //     generics,
-        //     fields,
-        //     position,
-        // } = stmt;
-
-        // let mut fields_ty = Vec::new();
-        // let mut fields_index = HashMap::new();
-
-        // for (index, field) in fields.iter().enumerate() {
-        //     fields_ty.push(
-        //         field
-        //             .ty
-        //             .kind
-        //             .to_llvm_type(self.context, self.symbol_table.clone()),
-        //     );
-
-        //     // global struct.field = index
-        //     let global = self.module.add_global(
-        //         self.context.i64_type(),
-        //         None,
-        //         format!("{}.{}", name, field.identifier.value).as_str(),
-        //     );
-
-        //     global.set_initializer(&self.context.i64_type().const_int(index as u64, false));
-
-        //     fields_index.insert(index, field.ty.kind.clone());
-        // }
-
-        // let struct_ty = self.context.opaque_struct_type(name.as_str());
-
-        // struct_ty.set_body(fields_ty.as_slice(), false);
-
-        // self.module.add_global(struct_ty, None, name.as_str());
-
+    fn compile_struct_statement(&mut self, _stmt: StructStatement) -> CompileResult<()> {
         todo!()
     }
 }

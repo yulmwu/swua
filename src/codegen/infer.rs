@@ -1,12 +1,18 @@
-use super::SymbolTable;
+use super::{
+    error::{CompileError, CompileResult},
+    SymbolTable,
+};
 use crate::ast::{
     expression::Expression,
     literal::{ArrayLiteral, FunctionLiteral, Literal, StructLiteral},
     FunctionType, StructField, StructType, Ty, TyKind,
 };
 
-pub fn infer_expression(expression: Expression, symbol_table: &SymbolTable) -> TyKind {
-    match expression {
+pub fn infer_expression(
+    expression: Expression,
+    symbol_table: &SymbolTable,
+) -> CompileResult<TyKind> {
+    Ok(match expression {
         Expression::AssignmentExpression(_) => todo!(),
         Expression::BlockExpression(_) => todo!(),
         Expression::PrefixExpression(_) => todo!(),
@@ -15,38 +21,48 @@ pub fn infer_expression(expression: Expression, symbol_table: &SymbolTable) -> T
         Expression::CallExpression(_) => todo!(),
         Expression::TypeofExpression(_) => todo!(),
         Expression::IndexExpression(index_expression) => {
-            let array_ty = infer_expression(*index_expression.left, symbol_table);
+            let array_ty = infer_expression(*index_expression.left, symbol_table)?;
             match array_ty {
                 TyKind::Array(ty) => ty.kind.clone(),
-                _ => panic!("Indexing a non-array type"),
+                _ => {
+                    return Err(CompileError::indexing_non_array_type(
+                        index_expression.position,
+                    ))
+                }
             }
         }
-        Expression::Literal(literal) => infer_literal(literal, symbol_table),
+        Expression::Literal(literal) => infer_literal(literal, symbol_table)?,
         Expression::Debug(_, _) => todo!(),
-    }
+    })
 }
 
-pub fn infer_literal(literal: Literal, symbol_table: &SymbolTable) -> TyKind {
-    match literal {
+pub fn infer_literal(literal: Literal, symbol_table: &SymbolTable) -> CompileResult<TyKind> {
+    Ok(match literal {
         Literal::Int(_) => TyKind::Int,
         Literal::Float(_) => TyKind::Float,
         Literal::String(_) => TyKind::String,
         Literal::Boolean(_) => TyKind::Boolean,
         Literal::Array(ArrayLiteral { elements, position }) => {
-            let mut ty = None;
+            let mut ty: Option<Ty> = None;
             for element in elements {
-                if ty.is_none() {
-                    ty = Some(Ty::new(infer_expression(element, symbol_table), position));
-                    continue;
+                match ty {
+                    Some(ref ty) => {
+                        if ty.kind != infer_expression(element, symbol_table)? {
+                            return Err(CompileError::array_elements_must_be_of_the_same_type(
+                                position,
+                            ));
+                        }
+                    }
+                    None => {
+                        ty = Some(Ty::new(infer_expression(element, symbol_table)?, position));
+                        continue;
+                    }
                 }
-
-                assert_eq!(
-                    ty.clone().unwrap().kind,
-                    infer_expression(element, symbol_table),
-                    "Array elements must be of the same type"
-                );
             }
-            TyKind::Array(Box::new(ty.expect("Array must have at least one element")))
+            match ty {
+                Some(ty) => TyKind::Array(Box::new(ty)),
+                None => return Err(CompileError::array_must_have_at_least_one_element(position)),
+            }
         }
         Literal::Struct(StructLiteral {
             identifier,
@@ -57,7 +73,7 @@ pub fn infer_literal(literal: Literal, symbol_table: &SymbolTable) -> TyKind {
             for (identifier, expression) in fields {
                 fields_ty.push(StructField {
                     identifier,
-                    ty: Ty::new(infer_expression(expression, symbol_table), position),
+                    ty: Ty::new(infer_expression(expression, symbol_table)?, position),
                     position: Default::default(),
                 });
             }
@@ -68,14 +84,15 @@ pub fn infer_literal(literal: Literal, symbol_table: &SymbolTable) -> TyKind {
                 position,
             })
         }
-        Literal::Identifier(identifier) => {
-            symbol_table
-                .variables
-                .get(&identifier.value)
-                .unwrap()
-                .clone()
-                .1
-        }
+        Literal::Identifier(identifier) => match symbol_table.variables.get(&identifier.value) {
+            Some(ty) => ty.1.clone(),
+            None => {
+                return Err(CompileError::identifier_not_found(
+                    identifier.value,
+                    identifier.position,
+                ))
+            }
+        },
         Literal::Function(FunctionLiteral {
             parameters,
             body: _,
@@ -94,5 +111,5 @@ pub fn infer_literal(literal: Literal, symbol_table: &SymbolTable) -> TyKind {
                 position,
             })
         }
-    }
+    })
 }
