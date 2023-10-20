@@ -60,7 +60,6 @@ pub struct Parameter {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ArrayLiteral {
     pub elements: Vec<Expression>,
-    pub ty: Ty,
     pub position: Position,
 }
 
