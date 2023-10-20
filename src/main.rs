@@ -1,57 +1,71 @@
+use clap::{Parser, Subcommand};
 use inkwell::{context::Context, OptimizationLevel};
-use std::fs;
-use swua::{codegen::Compiler, parser::Parser, tokenizer::Lexer};
+use std::{fs, path::PathBuf};
+use swua::codegen::Compiler;
+
+#[derive(Parser, Debug)]
+#[clap(bin_name = "swua", version = "0.0.0", arg_required_else_help = true)]
+pub struct Cli {
+    #[clap(subcommand)]
+    pub subcommand: SubCommand,
+    #[clap(short, long, help = "Print LLVM IR")]
+    pub llvm_ir: bool,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SubCommand {
+    #[clap(name = "compile", about = "Compile Swua source code")]
+    Compile {
+        #[clap(short, long)]
+        input: PathBuf,
+        #[clap(short, long)]
+        output: PathBuf,
+    },
+    #[clap(name = "run", about = "Jit compile and run Swua source code")]
+    Run {
+        #[clap(short, long)]
+        input: PathBuf,
+    },
+}
 
 fn main() {
-    let context = Context::create();
-    let mut compiler = Compiler::new(&context, "main");
+    let cli = Cli::parse();
 
-    let lexer = Lexer::new(
-        r#"
-extern fn print(int) -> int;
-extern fn print_str(string) -> int;
-extern fn print_array(int, int) -> int;
-// extern fn printf(string) -> int;
-// extern fn print_struct(Foo, int) -> int;
+    match cli.subcommand {
+        SubCommand::Compile { input, output } => {
+            let context = Context::create();
+            let module = Compiler::new(&context, "main")
+                .compile(&fs::read_to_string(input).unwrap())
+                .unwrap();
 
-fn main() -> int {
-    let x = ["Hello", "World!"];
-    let index_0 = x[0];
-    print_str(x[0]);
-    print_str(x[1]);
-    print_str(index_0);
+            if cli.llvm_ir {
+                println!("{}", module.print_to_string().to_string());
+            }
 
-    print_array([1, 2, 3], 3);
-    print([1, 2, 3][2]);
+            fs::write(output, module.print_to_string().to_string()).unwrap();
+        }
+        SubCommand::Run { input } => {
+            let context = Context::create();
+            let module = Compiler::new(&context, "main")
+                .compile(&fs::read_to_string(input).unwrap())
+                .unwrap();
 
-    return 0;
-}
-"#
-        .trim(),
-    );
-    let program = Parser::new(lexer).parse_program().unwrap();
+            if cli.llvm_ir {
+                println!("{}", module.print_to_string().to_string());
+            }
 
-    compiler
-        .compile_module("main".to_string(), program)
-        .unwrap();
+            let engine = module
+                .create_jit_execution_engine(OptimizationLevel::None)
+                .unwrap();
 
-    println!("{}", compiler.module.print_to_string().to_string());
-    fs::write(
-        "./build/main.ll",
-        compiler.module.print_to_string().to_string(),
-    )
-    .unwrap();
+            type JitMainFunction = unsafe extern "C" fn() -> i64;
 
-    type JitMainFunc = unsafe extern "C" fn() -> i64;
-
-    unsafe {
-        let main = compiler
-            .module
-            .create_jit_execution_engine(OptimizationLevel::None)
-            .unwrap()
-            .get_function::<JitMainFunc>("main")
-            .expect("Failed to find main function");
-
-        println!("JIT Return: {}", main.call());
-    };
+            unsafe {
+                engine
+                    .get_function::<JitMainFunction>("main")
+                    .expect("Failed to find function main")
+                    .call()
+            };
+        }
+    }
 }
