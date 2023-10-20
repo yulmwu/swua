@@ -31,7 +31,9 @@ fn main() -> int {
     );
     let program = Parser::new(lexer).parse_program().unwrap();
 
-    compiler.compile_module("main".to_string(), program);
+    compiler
+        .compile_module("main".to_string(), program)
+        .unwrap();
 
     println!("{}", compiler.module.print_to_string().to_string());
     fs::write(
