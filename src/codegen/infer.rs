@@ -32,19 +32,21 @@ pub fn infer_literal(literal: Literal, symbol_table: &SymbolTable) -> TyKind {
         Literal::Float(_) => TyKind::Float,
         Literal::String(_) => TyKind::String,
         Literal::Boolean(_) => TyKind::Boolean,
-        Literal::Array(ArrayLiteral {
-            elements,
-            ty,
-            position: _,
-        }) => {
+        Literal::Array(ArrayLiteral { elements, position }) => {
+            let mut ty = None;
             for element in elements {
+                if ty.is_none() {
+                    ty = Some(Ty::new(infer_expression(element, symbol_table), position));
+                    continue;
+                }
+
                 assert_eq!(
-                    ty.kind,
+                    ty.clone().unwrap().kind,
                     infer_expression(element, symbol_table),
                     "Array elements must be of the same type"
                 );
             }
-            TyKind::Array(Box::new(ty))
+            TyKind::Array(Box::new(ty.expect("Array must have at least one element")))
         }
         Literal::Struct(StructLiteral {
             identifier,

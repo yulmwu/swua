@@ -1,4 +1,4 @@
-use self::infer::infer_expression;
+use self::infer::{infer_expression, infer_literal};
 use crate::ast::*;
 use core::panic;
 use inkwell::{
@@ -255,11 +255,11 @@ impl<'ctx> Compiler<'ctx> {
             Literal::Array(arr) => {
                 let mut values: Vec<BasicValueEnum> = Vec::new();
 
-                for val in arr.elements {
+                for val in arr.clone().elements {
                     values.push(self.compile_expression(val).0);
                 }
 
-                let ty = TyKind::Array(Box::new(arr.ty.clone()));
+                let ty = infer_literal(Literal::Array(arr), &self.symbol_table);
                 let array_ty = ty
                     .to_llvm_type(self.context, self.symbol_table.clone())
                     .array_type(values.len() as u32);
