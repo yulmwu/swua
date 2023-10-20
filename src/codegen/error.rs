@@ -1,4 +1,7 @@
-use crate::ast::Position;
+use crate::{
+    ast::Position,
+    parser::error::{ParsingError, ParsingErrorKind},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompileError {
@@ -88,9 +91,16 @@ impl CompileError {
     }
 }
 
+impl From<ParsingError> for CompileError {
+    fn from(error: ParsingError) -> Self {
+        Self::new(CompileErrorKind::ParsingError(error.kind), error.position)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[rustfmt::skip]
 pub enum CompileErrorKind {
+    ParsingError(ParsingErrorKind),
     Expected(String),
     Unexpected(String),
     IndexingNonArrayType,

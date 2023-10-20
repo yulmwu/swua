@@ -5,7 +5,7 @@ use self::{
     error::{CompileError, CompileResult},
     infer::{infer_expression, infer_literal},
 };
-use crate::ast::*;
+use crate::{ast::*, parser::Parser, tokenizer::Lexer};
 use inkwell::{
     builder::Builder,
     context::Context,
@@ -47,14 +47,30 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    pub fn compile_module(&mut self, name: String, program: Program) -> CompileResult<()> {
+    pub fn compile(&mut self, source: &str) -> CompileResult<Module<'ctx>> {
+        let lexer = Lexer::new(source);
+        let program = match Parser::new(lexer).parse_program() {
+            Ok(program) => program,
+            Err(err) => return Err(CompileError::from(err[0].clone())),
+        };
+
+        let module = self.compile_module("main".to_string(), program)?;
+
+        Ok(module)
+    }
+
+    pub fn compile_module(
+        &mut self,
+        name: String,
+        program: Program,
+    ) -> CompileResult<Module<'ctx>> {
         self.module = self.context.create_module(name.as_str());
 
         for stmt in program {
             self.compile_statement(stmt)?;
         }
 
-        Ok(())
+        Ok(self.module.clone())
     }
 
     pub fn compile_statement(&mut self, stmt: Statement) -> CompileResult<()> {
