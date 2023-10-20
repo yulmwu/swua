@@ -663,15 +663,11 @@ impl<'a> Parser<'a> {
     fn parse_array_literal(&mut self) -> ParseResult<ArrayLiteral> {
         self.next_token();
 
-        let ty = self.parse_ty()?;
-        self.expect_token(&TokenKind::Semicolon)?;
-
         let mut elements = Vec::new();
 
         if self.current_token.kind == TokenKind::RBracket {
             return Ok(ArrayLiteral {
                 elements,
-                ty,
                 position: self.position,
             });
         }
@@ -697,7 +693,6 @@ impl<'a> Parser<'a> {
 
         Ok(ArrayLiteral {
             elements,
-            ty,
             position: self.position,
         })
     }
