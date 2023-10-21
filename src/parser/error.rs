@@ -1,4 +1,5 @@
 use crate::ast::Position;
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsingError {
@@ -56,6 +57,21 @@ pub enum ParsingErrorKind {
     ExpectedTy(String),
     ExpectedExpression(String),
     UnexpectedToken(String),
+}
+
+impl fmt::Display for ParsingErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParsingErrorKind::ExpectedNextToken(expected, got) => {
+                write!(f, "Expected {expected} but got {got}")
+            }
+            ParsingErrorKind::ExpectedTy(expected) => write!(f, "Expected type {expected}"),
+            ParsingErrorKind::ExpectedExpression(expected) => {
+                write!(f, "Expected expression {expected}")
+            }
+            ParsingErrorKind::UnexpectedToken(token) => write!(f, "Unexpected token {token}"),
+        }
+    }
 }
 
 pub type ParseResult<T> = Result<T, ParsingError>;

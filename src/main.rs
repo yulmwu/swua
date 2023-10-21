@@ -1,7 +1,14 @@
 use clap::{Parser, Subcommand};
 use inkwell::{context::Context, OptimizationLevel};
 use std::{fs, path::PathBuf};
-use swua::codegen::Compiler;
+use swua::codegen::{error::CompileError, Compiler};
+
+fn compile_error(err: CompileError, filename: &str) {
+    eprintln!(
+        "Compile error at {}:{}: {}",
+        filename, err.position, err.kind
+    );
+}
 
 #[derive(Parser, Debug)]
 #[clap(bin_name = "swua", version = "0.0.0", arg_required_else_help = true)]
@@ -34,9 +41,15 @@ fn main() {
     match cli.subcommand {
         SubCommand::Compile { input, output } => {
             let context = Context::create();
-            let module = Compiler::new(&context, "main")
-                .compile(&fs::read_to_string(input).unwrap())
-                .unwrap();
+            let module = match Compiler::new(&context, "main")
+                .compile(&fs::read_to_string(input.clone()).unwrap())
+            {
+                Ok(module) => module,
+                Err(err) => {
+                    compile_error(err, input.to_str().unwrap());
+                    return;
+                }
+            };
 
             if cli.llvm_ir {
                 println!("{}", module.print_to_string().to_string());
@@ -46,12 +59,18 @@ fn main() {
         }
         SubCommand::Run { input } => {
             let context = Context::create();
-            let module = Compiler::new(&context, "main")
-                .compile(&fs::read_to_string(input).unwrap())
-                .unwrap();
+            let module = match Compiler::new(&context, "main")
+                .compile(&fs::read_to_string(input.clone()).unwrap())
+            {
+                Ok(module) => module,
+                Err(err) => {
+                    compile_error(err, input.to_str().unwrap());
+                    return;
+                }
+            };
 
             if cli.llvm_ir {
-                println!("{}", module.print_to_string().to_string());
+                eprintln!("{}", module.print_to_string().to_string());
             }
 
             let engine = module

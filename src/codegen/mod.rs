@@ -130,6 +130,15 @@ impl<'ctx> Compiler<'ctx> {
             _ => todo!(),
         };
 
+        let inferred_ty = match initializer.clone() {
+            Some(expr) => infer_expression(expr, &self.symbol_table)?,
+            None => ty.clone(),
+        };
+
+        if ty != inferred_ty {
+            return Err(CompileError::type_mismatch(ty, inferred_ty, position));
+        }
+
         let alloca = self
             .builder
             .build_alloca(self.context.i64_type(), name.as_str());

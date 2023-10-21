@@ -2,6 +2,7 @@ use crate::{
     ast::Position,
     parser::error::{ParsingError, ParsingErrorKind},
 };
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompileError {
@@ -21,11 +22,24 @@ impl CompileError {
         Self::new(CompileErrorKind::Expected(expected.to_string()), position)
     }
 
-    pub fn unexpected<T>(token: T, position: Position) -> Self
+    pub fn unexpected<T>(unexpected: T, position: Position) -> Self
     where
         T: ToString,
     {
-        Self::new(CompileErrorKind::Unexpected(token.to_string()), position)
+        Self::new(
+            CompileErrorKind::Unexpected(unexpected.to_string()),
+            position,
+        )
+    }
+
+    pub fn type_mismatch<T>(expected: T, found: T, position: Position) -> Self
+    where
+        T: ToString,
+    {
+        Self::new(
+            CompileErrorKind::TypeMismatch(expected.to_string(), found.to_string()),
+            position,
+        )
     }
 
     pub fn indexing_non_array_type(position: Position) -> Self {
@@ -50,42 +64,36 @@ impl CompileError {
         )
     }
 
-    pub fn struct_not_found<T>(identifier: T, position: Position) -> Self
+    pub fn struct_not_found<T>(name: T, position: Position) -> Self
+    where
+        T: ToString,
+    {
+        Self::new(CompileErrorKind::StructNotFound(name.to_string()), position)
+    }
+
+    pub fn function_not_found<T>(name: T, position: Position) -> Self
     where
         T: ToString,
     {
         Self::new(
-            CompileErrorKind::StructNotFound(identifier.to_string()),
+            CompileErrorKind::FunctionNotFound(name.to_string()),
             position,
         )
     }
 
-    pub fn function_not_found<T>(identifier: T, position: Position) -> Self
+    pub fn unknown_type<T>(ty: T, position: Position) -> Self
     where
         T: ToString,
     {
-        Self::new(
-            CompileErrorKind::FunctionNotFound(identifier.to_string()),
-            position,
-        )
+        Self::new(CompileErrorKind::UnknownType(ty.to_string()), position)
     }
 
-    pub fn unknown_type<T>(identifier: T, position: Position) -> Self
+    pub fn unknown_operator<T>(operator: T, position: Position) -> Self
     where
         T: ToString,
     {
         Self::new(
-            CompileErrorKind::UnknownType(identifier.to_string()),
-            position,
-        )
-    }
-
-    pub fn unknown_operator<T>(identifier: T, position: Position) -> Self
-    where
-        T: ToString,
-    {
-        Self::new(
-            CompileErrorKind::UnknownOperator(identifier.to_string()),
+            CompileErrorKind::UnknownOperator(operator.to_string()),
             position,
         )
     }
@@ -103,6 +111,7 @@ pub enum CompileErrorKind {
     ParsingError(ParsingErrorKind),
     Expected(String),
     Unexpected(String),
+    TypeMismatch(String, String),
     IndexingNonArrayType,
     ArrayElementsMustBeOfTheSameType,
     ArrayMustHaveAtLeastOneElement,
@@ -111,6 +120,31 @@ pub enum CompileErrorKind {
     FunctionNotFound(String),
     UnknownType(String),
     UnknownOperator(String),
+}
+
+impl fmt::Display for CompileErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ParsingError(kind) => write!(f, "{kind}"),
+            Self::Expected(expected) => write!(f, "Expected {expected}"),
+            Self::Unexpected(unexpected) => write!(f, "Unexpected {unexpected}"),
+            Self::TypeMismatch(expected, found) => {
+                write!(f, "Expected {expected}, but found {found}")
+            }
+            Self::IndexingNonArrayType => write!(f, "Indexing non-array type"),
+            Self::ArrayElementsMustBeOfTheSameType => {
+                write!(f, "Array elements must be of the same type")
+            }
+            Self::ArrayMustHaveAtLeastOneElement => {
+                write!(f, "Array must have at least one element")
+            }
+            Self::IdentifierNotFound(identifier) => write!(f, "Identifier {identifier} not found"),
+            Self::StructNotFound(name) => write!(f, "Struct {name} not found"),
+            Self::FunctionNotFound(name) => write!(f, "Function {name} not found"),
+            Self::UnknownType(ty) => write!(f, "Unknown type {ty}"),
+            Self::UnknownOperator(operator) => write!(f, "Unknown operator {operator}"),
+        }
+    }
 }
 
 pub type CompileResult<T> = Result<T, CompileError>;
