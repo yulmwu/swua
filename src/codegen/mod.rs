@@ -414,7 +414,70 @@ impl<'ctx> Compiler<'ctx> {
         &mut self,
         expr: IfExpression,
     ) -> CompileResult<ExpressionReturn<'ctx>> {
-        todo!()
+        let IfExpression {
+            condition,
+            consequence,
+            alternative,
+            ..
+        } = expr;
+
+        let condition = self.compile_expression(*condition)?;
+        let condition = self
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::NE,
+                condition.0.into_int_value(),
+                self.context.i64_type().const_int(0, false),
+                "ifcond",
+            )
+            .as_basic_value_enum();
+
+        let function = self
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap();
+
+        let then_block = self.context.append_basic_block(function, "then");
+        let else_block = self.context.append_basic_block(function, "else");
+        let merge_block = self.context.append_basic_block(function, "ifcont");
+
+        self.builder
+            .build_conditional_branch(condition.into_int_value(), then_block, else_block);
+
+        self.builder.position_at_end(then_block);
+
+        let consequence = self.compile_expression(Expression::BlockExpression(*consequence))?;
+        self.builder.build_unconditional_branch(merge_block);
+
+        let then_block = self.builder.get_insert_block().unwrap();
+
+        self.builder.position_at_end(else_block);
+
+        let alternative = match alternative {
+            Some(expr) => self.compile_expression(Expression::BlockExpression(*expr))?,
+            None => (
+                self.context
+                    .i64_type()
+                    .const_int(0, false)
+                    .as_basic_value_enum(),
+                TyKind::Void,
+            ),
+        };
+        self.builder.build_unconditional_branch(merge_block);
+
+        let else_block = self.builder.get_insert_block().unwrap();
+
+        self.builder.position_at_end(merge_block);
+
+        let phi = self
+            .builder
+            .build_phi(consequence.1.to_llvm_type(self.context), "iftmp");
+
+        phi.add_incoming(&[(&consequence.0, then_block), (&alternative.0, else_block)]);
+
+        Ok((phi.as_basic_value(), consequence.1))
     }
 
     fn compile_call_expression(
@@ -458,7 +521,17 @@ impl<'ctx> Compiler<'ctx> {
         let mut args: Vec<BasicMetadataValueEnum> = Vec::new();
 
         for arg in arguments {
-            args.push(self.compile_expression(arg)?.0.into());
+            let expr = self.compile_expression(arg.clone())?;
+            args.push(expr.0.into());
+
+            let arg_ty = infer_expression(arg, &mut self.symbol_table)?;
+            if arg_ty != function_ty.parameters[args.len() - 1].kind {
+                return Err(CompileError::type_mismatch(
+                    function_ty.parameters[args.len() - 1].to_string(),
+                    arg_ty.to_string(),
+                    position,
+                ));
+            }
         }
 
         let result = match self

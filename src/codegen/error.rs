@@ -107,6 +107,10 @@ impl CompileError {
             position,
         )
     }
+
+    pub fn if_else_must_have_the_same_type(position: Position) -> Self {
+        Self::new(CompileErrorKind::IfElseMustHaveTheSameType, position)
+    }
 }
 
 impl From<ParsingError> for CompileError {
@@ -131,6 +135,7 @@ pub enum CompileErrorKind {
     FunctionNotFound(String),
     UnknownType(String),
     UnknownOperator(String),
+    IfElseMustHaveTheSameType,
 }
 
 impl fmt::Display for CompileErrorKind {
@@ -157,6 +162,7 @@ impl fmt::Display for CompileErrorKind {
             Self::FunctionNotFound(name) => write!(f, "Function {name} not found"),
             Self::UnknownType(ty) => write!(f, "Unknown type {ty}"),
             Self::UnknownOperator(operator) => write!(f, "Unknown operator {operator}"),
+            Self::IfElseMustHaveTheSameType => write!(f, "If else must have the same type"),
         }
     }
 }

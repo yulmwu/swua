@@ -3,7 +3,7 @@ use super::{
     symbol_table::SymbolTable,
 };
 use crate::ast::{
-    expression::Expression,
+    expression::{BlockExpression, Expression, IfExpression},
     literal::{ArrayLiteral, FunctionLiteral, Literal, StructLiteral},
     statement::Statement,
     FunctionType, StructField, StructType, Ty, TyKind,
@@ -15,9 +15,9 @@ pub fn infer_expression(
 ) -> CompileResult<TyKind> {
     Ok(match expression {
         Expression::AssignmentExpression(_) => todo!(),
-        Expression::BlockExpression(expr) => {
+        Expression::BlockExpression(BlockExpression { statements, .. }) => {
             let mut ty = TyKind::Void;
-            for statement in expr.statements {
+            for statement in statements {
                 if let Statement::ReturnStatement(stmt) = statement {
                     ty = infer_expression(stmt.value, symbol_table)?;
                 }
@@ -26,7 +26,21 @@ pub fn infer_expression(
         }
         Expression::PrefixExpression(_) => todo!(),
         Expression::InfixExpression(_) => todo!(),
-        Expression::IfExpression(_) => todo!(),
+        Expression::IfExpression(IfExpression {
+            consequence,
+            alternative,
+            position,
+            ..
+        }) => {
+            let ty = infer_expression(Expression::BlockExpression(*consequence), symbol_table)?;
+            if let Some(alternative) = alternative {
+                if ty != infer_expression(Expression::BlockExpression(*alternative), symbol_table)?
+                {
+                    return Err(CompileError::if_else_must_have_the_same_type(position));
+                }
+            }
+            ty
+        }
         Expression::CallExpression(_) => todo!(),
         Expression::TypeofExpression(_) => todo!(),
         Expression::IndexExpression(expr) => {
