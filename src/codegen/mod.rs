@@ -1,30 +1,23 @@
 pub mod error;
 pub mod infer;
+pub mod symbol_table;
 
 use self::{
     error::{CompileError, CompileResult},
     infer::{infer_expression, infer_literal},
+    symbol_table::SymbolTable,
 };
 use crate::{ast::*, parser::Parser, tokenizer::Lexer};
 use inkwell::{
     builder::Builder,
     context::Context,
     module::Module,
-    types::{self, BasicType},
-    values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue},
+    types::BasicType,
+    values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum},
 };
-use std::collections::HashMap;
 
 /// (llvm value, type)
 type ExpressionReturn<'ctx> = (BasicValueEnum<'ctx>, TyKind);
-
-#[derive(Debug, Clone, Default)]
-pub struct SymbolTable<'a> {
-    /// Variable name, (llvm pointer, type)
-    pub variables: HashMap<String, (PointerValue<'a>, TyKind)>,
-    /// Function name, (llvm function type, function type)
-    pub functions: HashMap<String, (types::FunctionType<'a>, FunctionType)>,
-}
 
 pub struct Compiler<'ctx> {
     pub context: &'ctx Context,
@@ -44,6 +37,22 @@ impl<'ctx> Compiler<'ctx> {
             builder,
             module,
             symbol_table: SymbolTable::default(),
+        }
+    }
+
+    pub fn new_with_symbol_table(
+        context: &'ctx Context,
+        name: &str,
+        symbol_table: SymbolTable<'ctx>,
+    ) -> Self {
+        let builder = context.create_builder();
+        let module = context.create_module(name);
+
+        Compiler {
+            context,
+            builder,
+            module,
+            symbol_table,
         }
     }
 
@@ -96,10 +105,10 @@ impl<'ctx> Compiler<'ctx> {
     ) -> CompileResult<ExpressionReturn<'ctx>> {
         let (value, ty) = match expr {
             Expression::AssignmentExpression(expr) => self.compile_assignment_expression(expr),
-            Expression::BlockExpression(_) => todo!(),
+            Expression::BlockExpression(expr) => self.compile_block_expression(expr),
             Expression::PrefixExpression(_) => todo!(),
             Expression::InfixExpression(expr) => self.compile_infix_expression(expr),
-            Expression::IfExpression(_) => todo!(),
+            Expression::IfExpression(expr) => self.compile_if_expression(expr),
             Expression::CallExpression(expr) => self.compile_call_expression(expr),
             Expression::TypeofExpression(_) => todo!(),
             Expression::IndexExpression(expr) => self.compile_index_expression(expr),
@@ -111,12 +120,20 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_let_statement(&mut self, stmt: LetStatement) -> CompileResult<()> {
         let LetStatement {
-            identifier: Identifier { value: name, .. },
+            identifier:
+                Identifier {
+                    value: name,
+                    position: i_position,
+                },
             value: initializer,
             ty,
             position,
             ..
         } = stmt;
+
+        if self.symbol_table.get_variable(&name).is_some() {
+            return Err(CompileError::variable_already_declared(name, i_position));
+        }
 
         let ty = match ty {
             Some(ty) => ty.kind,
@@ -125,13 +142,13 @@ impl<'ctx> Compiler<'ctx> {
                     Some(expr) => expr,
                     None => return Err(CompileError::expected("Initializer", position)),
                 };
-                infer_expression(initializer, &self.symbol_table)?
+                infer_expression(initializer, &mut self.symbol_table)?
             }
             _ => todo!(),
         };
 
         let inferred_ty = match initializer.clone() {
-            Some(expr) => infer_expression(expr, &self.symbol_table)?,
+            Some(expr) => infer_expression(expr, &mut self.symbol_table)?,
             None => ty.clone(),
         };
 
@@ -148,7 +165,7 @@ impl<'ctx> Compiler<'ctx> {
             self.builder.build_store(alloca, value);
         }
 
-        self.symbol_table.variables.insert(name, (alloca, ty));
+        self.symbol_table.variables().insert(name, (alloca, ty));
 
         Ok(())
     }
@@ -182,7 +199,7 @@ impl<'ctx> Compiler<'ctx> {
 
         self.builder.position_at_end(basic_block);
 
-        self.symbol_table.functions.insert(
+        self.symbol_table.functions().insert(
             name.clone(),
             (
                 function_type,
@@ -195,6 +212,9 @@ impl<'ctx> Compiler<'ctx> {
             ),
         );
 
+        let original_symbol_table = self.symbol_table.clone();
+        self.symbol_table = SymbolTable::new_with_parent(self.symbol_table.clone());
+
         for (i, param) in function.get_param_iter().enumerate() {
             let alloca = self
                 .builder
@@ -202,7 +222,7 @@ impl<'ctx> Compiler<'ctx> {
 
             self.builder.build_store(alloca, param);
 
-            self.symbol_table.variables.insert(
+            self.symbol_table.variables().insert(
                 parameters[i].identifier.value.clone(),
                 (alloca, parameters[i].ty.kind.clone()),
             );
@@ -225,6 +245,8 @@ impl<'ctx> Compiler<'ctx> {
                 _ => unimplemented!(),
             }
         }
+
+        self.symbol_table = original_symbol_table;
 
         Ok(())
     }
@@ -252,7 +274,7 @@ impl<'ctx> Compiler<'ctx> {
 
         self.module.add_function(name.as_str(), function_type, None);
 
-        self.symbol_table.functions.insert(
+        self.symbol_table.functions().insert(
             name,
             (
                 function_type,
@@ -308,7 +330,7 @@ impl<'ctx> Compiler<'ctx> {
                     values.push(self.compile_expression(val)?.0);
                 }
 
-                let ty = infer_literal(Literal::Array(arr), &self.symbol_table)?;
+                let ty = infer_literal(Literal::Array(arr), &mut self.symbol_table)?;
                 let array_ty = ty
                     .to_llvm_type(self.context)
                     .array_type(values.len() as u32);
@@ -377,7 +399,7 @@ impl<'ctx> Compiler<'ctx> {
     ) -> CompileResult<ExpressionReturn<'ctx>> {
         let name = ident.value;
 
-        Ok(match self.symbol_table.variables.get(&name) {
+        Ok(match self.symbol_table.get_variable(&name) {
             Some((ptr, ty)) => (
                 self.builder
                     .build_load(ty.to_llvm_type(self.context), *ptr, name.as_str())
@@ -386,6 +408,13 @@ impl<'ctx> Compiler<'ctx> {
             ),
             None => return Err(CompileError::identifier_not_found(name, ident.position)),
         })
+    }
+
+    fn compile_if_expression(
+        &mut self,
+        expr: IfExpression,
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
+        todo!()
     }
 
     fn compile_call_expression(
@@ -411,7 +440,7 @@ impl<'ctx> Compiler<'ctx> {
                         }
                     };
 
-                    let ty = match self.symbol_table.functions.get(&ident.value) {
+                    let ty = match self.symbol_table.get_function(&ident.value) {
                         Some(ty) => ty.clone(),
                         None => {
                             return Err(CompileError::function_not_found(
@@ -432,17 +461,23 @@ impl<'ctx> Compiler<'ctx> {
             args.push(self.compile_expression(arg)?.0.into());
         }
 
-        let llvm_value = match self
+        let result = match self
             .builder
             .build_call(function, args.as_slice(), format!("{name}.call").as_str())
             .try_as_basic_value()
             .left()
         {
-            Some(value) => value,
-            None => return Err(CompileError::expected("return value", position)),
+            Some(value) => (value, function_ty.ret.kind),
+            None => (
+                self.context
+                    .i64_type()
+                    .const_int(0, false)
+                    .as_basic_value_enum(),
+                TyKind::Void,
+            ),
         };
 
-        Ok((llvm_value, function_ty.ret.kind.clone()))
+        Ok(result)
     }
 
     fn compile_assignment_expression(
@@ -457,16 +492,56 @@ impl<'ctx> Compiler<'ctx> {
 
         let llvm_value = self.compile_expression(*value.clone())?.0;
 
-        Ok(match self.symbol_table.variables.get(&name) {
+        Ok(match self.symbol_table.clone().get_variable(&name) {
             Some((ptr, ty)) => {
                 self.builder.build_store(*ptr, llvm_value);
 
-                assert_eq!(ty.clone(), infer_expression(*value, &self.symbol_table)?);
+                assert_eq!(
+                    ty.clone(),
+                    infer_expression(*value, &mut self.symbol_table)?
+                );
 
                 (llvm_value, ty.clone())
             }
             None => return Err(CompileError::identifier_not_found(name, position)),
         })
+    }
+
+    fn compile_block_expression(
+        &mut self,
+        block: BlockExpression,
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
+        let original_symbol_table = self.symbol_table.clone();
+        self.symbol_table = SymbolTable::new_with_parent(self.symbol_table.clone());
+
+        for stmt in block.statements {
+            match stmt {
+                Statement::LetStatement(stmt) => self.compile_let_statement(stmt)?,
+                Statement::FunctionDeclaration(func) => self.compile_function_declaration(func)?,
+                Statement::ReturnStatement(expr) => {
+                    let value = self.compile_expression(expr.value.clone())?.0;
+
+                    let result = (value, infer_expression(expr.value, &mut self.symbol_table)?);
+                    self.symbol_table = original_symbol_table;
+                    return Ok(result);
+                }
+                Statement::StructStatement(stmt) => self.compile_struct_statement(stmt)?,
+                Statement::ExpressionStatement(expr) => {
+                    self.compile_expression(expr.expression)?;
+                }
+                _ => unimplemented!(),
+            }
+        }
+
+        self.symbol_table = original_symbol_table;
+
+        Ok((
+            self.context
+                .i64_type()
+                .const_int(0, false)
+                .as_basic_value_enum(),
+            TyKind::Void,
+        ))
     }
 
     fn compile_infix_expression(

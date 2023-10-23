@@ -1,34 +1,39 @@
 use super::{
     error::{CompileError, CompileResult},
-    SymbolTable,
+    symbol_table::SymbolTable,
 };
 use crate::ast::{
     expression::Expression,
     literal::{ArrayLiteral, FunctionLiteral, Literal, StructLiteral},
+    statement::Statement,
     FunctionType, StructField, StructType, Ty, TyKind,
 };
 
 pub fn infer_expression(
     expression: Expression,
-    symbol_table: &SymbolTable,
+    symbol_table: &mut SymbolTable,
 ) -> CompileResult<TyKind> {
     Ok(match expression {
         Expression::AssignmentExpression(_) => todo!(),
-        Expression::BlockExpression(_) => todo!(),
+        Expression::BlockExpression(expr) => {
+            let mut ty = TyKind::Void;
+            for statement in expr.statements {
+                if let Statement::ReturnStatement(stmt) = statement {
+                    ty = infer_expression(stmt.value, symbol_table)?;
+                }
+            }
+            ty
+        }
         Expression::PrefixExpression(_) => todo!(),
         Expression::InfixExpression(_) => todo!(),
         Expression::IfExpression(_) => todo!(),
         Expression::CallExpression(_) => todo!(),
         Expression::TypeofExpression(_) => todo!(),
-        Expression::IndexExpression(index_expression) => {
-            let array_ty = infer_expression(*index_expression.left, symbol_table)?;
+        Expression::IndexExpression(expr) => {
+            let array_ty = infer_expression(*expr.left, symbol_table)?;
             match array_ty {
                 TyKind::Array(ty) => ty.kind.clone(),
-                _ => {
-                    return Err(CompileError::indexing_non_array_type(
-                        index_expression.position,
-                    ))
-                }
+                _ => return Err(CompileError::indexing_non_array_type(expr.position)),
             }
         }
         Expression::Literal(literal) => infer_literal(literal, symbol_table)?,
@@ -36,7 +41,7 @@ pub fn infer_expression(
     })
 }
 
-pub fn infer_literal(literal: Literal, symbol_table: &SymbolTable) -> CompileResult<TyKind> {
+pub fn infer_literal(literal: Literal, symbol_table: &mut SymbolTable) -> CompileResult<TyKind> {
     Ok(match literal {
         Literal::Int(_) => TyKind::Int,
         Literal::Float(_) => TyKind::Float,
@@ -84,7 +89,7 @@ pub fn infer_literal(literal: Literal, symbol_table: &SymbolTable) -> CompileRes
                 position,
             })
         }
-        Literal::Identifier(identifier) => match symbol_table.variables.get(&identifier.value) {
+        Literal::Identifier(identifier) => match symbol_table.get_variable(&identifier.value) {
             Some(ty) => ty.1.clone(),
             None => {
                 return Err(CompileError::identifier_not_found(

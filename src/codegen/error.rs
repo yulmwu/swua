@@ -64,6 +64,16 @@ impl CompileError {
         )
     }
 
+    pub fn variable_already_declared<T>(identifier: T, position: Position) -> Self
+    where
+        T: ToString,
+    {
+        Self::new(
+            CompileErrorKind::VariableAlreadyDeclared(identifier.to_string()),
+            position,
+        )
+    }
+
     pub fn struct_not_found<T>(name: T, position: Position) -> Self
     where
         T: ToString,
@@ -116,6 +126,7 @@ pub enum CompileErrorKind {
     ArrayElementsMustBeOfTheSameType,
     ArrayMustHaveAtLeastOneElement,
     IdentifierNotFound(String),
+    VariableAlreadyDeclared(String),
     StructNotFound(String),
     FunctionNotFound(String),
     UnknownType(String),
@@ -139,6 +150,9 @@ impl fmt::Display for CompileErrorKind {
                 write!(f, "Array must have at least one element")
             }
             Self::IdentifierNotFound(identifier) => write!(f, "Identifier {identifier} not found"),
+            Self::VariableAlreadyDeclared(identifier) => {
+                write!(f, "Variable {identifier} already declared")
+            }
             Self::StructNotFound(name) => write!(f, "Struct {name} not found"),
             Self::FunctionNotFound(name) => write!(f, "Function {name} not found"),
             Self::UnknownType(ty) => write!(f, "Unknown type {ty}"),
