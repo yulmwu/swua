@@ -56,7 +56,7 @@ impl TyKind {
                 .to_llvm_type(context)
                 .ptr_type(AddressSpace::from(0))
                 .into(),
-            _ => unimplemented!(),
+            ty => unimplemented!("{ty:?}"),
         }
     }
 
