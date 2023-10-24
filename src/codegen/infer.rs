@@ -3,7 +3,10 @@ use super::{
     symbol_table::SymbolTable,
 };
 use crate::ast::{
-    expression::{BlockExpression, Expression, IfExpression},
+    expression::{
+        BlockExpression, CallExpression, Expression, IfExpression, IndexExpression,
+        InfixExpression, InfixOperator,
+    },
     literal::{ArrayLiteral, FunctionLiteral, Literal, StructLiteral},
     statement::Statement,
     FunctionType, StructField, StructType, Ty, TyKind,
@@ -25,7 +28,40 @@ pub fn infer_expression(
             ty
         }
         Expression::PrefixExpression(_) => todo!(),
-        Expression::InfixExpression(_) => todo!(),
+        Expression::InfixExpression(InfixExpression {
+            left,
+            right,
+            operator,
+            position,
+        }) => {
+            let left_ty = infer_expression(*left, symbol_table)?;
+            let right_ty = infer_expression(*right, symbol_table)?;
+            use InfixOperator::*;
+            match operator {
+                Plus | Minus | Asterisk | Slash | Percent => {
+                    if left_ty != right_ty {
+                        return Err(CompileError::type_mismatch(left_ty, right_ty, position));
+                    }
+
+                    if left_ty == TyKind::Int || left_ty == TyKind::Float {
+                        left_ty
+                    } else {
+                        return Err(CompileError::type_mismatch(
+                            "Int or Float".to_string(),
+                            left_ty.to_string(),
+                            position,
+                        ));
+                    }
+                }
+                EQ | NEQ => {
+                    if left_ty != right_ty {
+                        return Err(CompileError::type_mismatch(left_ty, right_ty, position));
+                    }
+                    TyKind::Boolean
+                }
+                _ => todo!(),
+            }
+        }
         Expression::IfExpression(IfExpression {
             consequence,
             alternative,
@@ -34,20 +70,59 @@ pub fn infer_expression(
         }) => {
             let ty = infer_expression(Expression::BlockExpression(*consequence), symbol_table)?;
             if let Some(alternative) = alternative {
-                if ty != infer_expression(Expression::BlockExpression(*alternative), symbol_table)?
+                if ty
+                    != infer_expression(
+                        Expression::BlockExpression(*alternative.clone()),
+                        symbol_table,
+                    )?
                 {
                     return Err(CompileError::if_else_must_have_the_same_type(position));
                 }
             }
             ty
         }
-        Expression::CallExpression(_) => todo!(),
+        Expression::CallExpression(CallExpression {
+            function,
+            arguments,
+            position,
+        }) => {
+            let function_ty = infer_expression(*function, symbol_table)?;
+            match function_ty {
+                TyKind::Fn(function_ty) => {
+                    if function_ty.parameters.len() != arguments.len() {
+                        return Err(CompileError::wrong_number_of_arguments(
+                            function_ty.parameters.len(),
+                            arguments.len(),
+                            function_ty.position,
+                        ));
+                    }
+                    for (i, argument) in arguments.iter().enumerate() {
+                        if function_ty.parameters[i].kind
+                            != infer_expression(argument.clone(), symbol_table)?
+                        {
+                            return Err(CompileError::type_mismatch(
+                                function_ty.parameters[i].kind.clone(),
+                                infer_expression(argument.clone(), symbol_table)?,
+                                function_ty.position,
+                            ));
+                        }
+                    }
+                    function_ty.ret.kind
+                }
+                _ => {
+                    return Err(CompileError::call_non_function_type(
+                        function_ty.to_string(),
+                        position,
+                    ))
+                }
+            }
+        }
         Expression::TypeofExpression(_) => todo!(),
-        Expression::IndexExpression(expr) => {
-            let array_ty = infer_expression(*expr.left, symbol_table)?;
+        Expression::IndexExpression(IndexExpression { left, position, .. }) => {
+            let array_ty = infer_expression(*left, symbol_table)?;
             match array_ty {
                 TyKind::Array(ty) => ty.kind.clone(),
-                _ => return Err(CompileError::indexing_non_array_type(expr.position)),
+                _ => return Err(CompileError::indexing_non_array_type(position)),
             }
         }
         Expression::Literal(literal) => infer_literal(literal, symbol_table)?,
@@ -105,12 +180,15 @@ pub fn infer_literal(literal: Literal, symbol_table: &mut SymbolTable) -> Compil
         }
         Literal::Identifier(identifier) => match symbol_table.get_variable(&identifier.value) {
             Some(ty) => ty.1.clone(),
-            None => {
-                return Err(CompileError::identifier_not_found(
-                    identifier.value,
-                    identifier.position,
-                ))
-            }
+            None => match symbol_table.get_function(&identifier.value) {
+                Some(ty) => TyKind::Fn(ty.1.clone()),
+                None => {
+                    return Err(CompileError::identifier_not_found(
+                        identifier.value,
+                        identifier.position,
+                    ))
+                }
+            },
         },
         Literal::Function(FunctionLiteral {
             parameters,

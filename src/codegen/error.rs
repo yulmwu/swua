@@ -111,6 +111,23 @@ impl CompileError {
     pub fn if_else_must_have_the_same_type(position: Position) -> Self {
         Self::new(CompileErrorKind::IfElseMustHaveTheSameType, position)
     }
+
+    pub fn wrong_number_of_arguments(expected: usize, found: usize, position: Position) -> Self {
+        Self::new(
+            CompileErrorKind::WrongNumberOfArguments(expected, found),
+            position,
+        )
+    }
+
+    pub fn call_non_function_type<T>(ty: T, position: Position) -> Self
+    where
+        T: ToString,
+    {
+        Self::new(
+            CompileErrorKind::CallNonFunctionType(ty.to_string()),
+            position,
+        )
+    }
 }
 
 impl From<ParsingError> for CompileError {
@@ -136,6 +153,8 @@ pub enum CompileErrorKind {
     UnknownType(String),
     UnknownOperator(String),
     IfElseMustHaveTheSameType,
+    WrongNumberOfArguments(usize, usize),
+    CallNonFunctionType(String),
 }
 
 impl fmt::Display for CompileErrorKind {
@@ -163,6 +182,11 @@ impl fmt::Display for CompileErrorKind {
             Self::UnknownType(ty) => write!(f, "Unknown type {ty}"),
             Self::UnknownOperator(operator) => write!(f, "Unknown operator {operator}"),
             Self::IfElseMustHaveTheSameType => write!(f, "If else must have the same type"),
+            Self::WrongNumberOfArguments(expected, found) => write!(
+                f,
+                "Wrong number of arguments: expected {expected}, found {found}"
+            ),
+            Self::CallNonFunctionType(ty) => write!(f, "Call non-function type {ty}"),
         }
     }
 }

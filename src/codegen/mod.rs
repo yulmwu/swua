@@ -14,6 +14,7 @@ use inkwell::{
     module::Module,
     types::BasicType,
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum},
+    IntPredicate,
 };
 
 /// (llvm value, type)
@@ -418,19 +419,17 @@ impl<'ctx> Compiler<'ctx> {
             condition,
             consequence,
             alternative,
-            ..
+            position,
         } = expr;
 
         let condition = self.compile_expression(*condition)?;
-        let condition = self
-            .builder
-            .build_int_compare(
-                inkwell::IntPredicate::NE,
-                condition.0.into_int_value(),
-                self.context.i64_type().const_int(0, false),
-                "ifcond",
-            )
-            .as_basic_value_enum();
+        if condition.1 != TyKind::Boolean {
+            return Err(CompileError::type_mismatch(
+                TyKind::Boolean,
+                condition.1,
+                position,
+            ));
+        }
 
         let function = self
             .builder
@@ -441,21 +440,21 @@ impl<'ctx> Compiler<'ctx> {
 
         let then_block = self.context.append_basic_block(function, "then");
         let else_block = self.context.append_basic_block(function, "else");
-        let merge_block = self.context.append_basic_block(function, "ifcont");
+        let merge_block = self.context.append_basic_block(function, "merge");
 
         self.builder
-            .build_conditional_branch(condition.into_int_value(), then_block, else_block);
+            .build_conditional_branch(condition.0.into_int_value(), then_block, else_block);
 
         self.builder.position_at_end(then_block);
 
-        let consequence = self.compile_expression(Expression::BlockExpression(*consequence))?;
+        let then = self.compile_expression(Expression::BlockExpression(*consequence))?;
         self.builder.build_unconditional_branch(merge_block);
 
         let then_block = self.builder.get_insert_block().unwrap();
 
         self.builder.position_at_end(else_block);
 
-        let alternative = match alternative {
+        let else_ = match alternative {
             Some(expr) => self.compile_expression(Expression::BlockExpression(*expr))?,
             None => (
                 self.context
@@ -471,13 +470,15 @@ impl<'ctx> Compiler<'ctx> {
 
         self.builder.position_at_end(merge_block);
 
-        let phi = self
-            .builder
-            .build_phi(consequence.1.to_llvm_type(self.context), "iftmp");
+        if then.1 != else_.1 {
+            return Err(CompileError::if_else_must_have_the_same_type(position));
+        }
 
-        phi.add_incoming(&[(&consequence.0, then_block), (&alternative.0, else_block)]);
+        let phi = self.builder.build_phi(then.0.get_type(), "iftmp");
 
-        Ok((phi.as_basic_value(), consequence.1))
+        phi.add_incoming(&[(&then.0, then_block), (&else_.0, else_block)]);
+
+        Ok((phi.as_basic_value(), then.1))
     }
 
     fn compile_call_expression(
@@ -628,11 +629,113 @@ impl<'ctx> Compiler<'ctx> {
         let left = self.compile_expression(*left)?;
         let right = self.compile_expression(*right)?;
 
-        match (left.clone().1, right.1) {
-            (TyKind::Int, _) => self.compile_int_infix_expression(infix, left.0, right.0),
-            (TyKind::Float, _) => self.compile_float_infix_expression(infix, left.0, right.0),
+        use InfixOperator::*;
+
+        match infix.operator {
+            EQ | NEQ => self.compile_equality_infix_expression(infix, left, right),
+            LT | GT | LTE | GTE => self.compile_comparison_infix_expression(infix, left, right),
+            Plus | Minus | Asterisk | Slash | Percent => match (left.clone().1, right.1) {
+                (TyKind::Int, _) => self.compile_int_infix_expression(infix, left.0, right.0),
+                (TyKind::Float, _) => self.compile_float_infix_expression(infix, left.0, right.0),
+                _ => Err(CompileError::unknown_type(left.1, infix.position)),
+            },
+            _ => todo!(),
+        }
+    }
+
+    fn compile_equality_infix_expression(
+        &mut self,
+        infix: InfixExpression,
+        left: ExpressionReturn<'ctx>,
+        right: ExpressionReturn<'ctx>,
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
+        if left.1 != right.1 {
+            return Err(CompileError::type_mismatch(left.1, right.1, infix.position));
+        }
+
+        let operator = infix.operator;
+
+        use InfixOperator::*;
+
+        match left.1 {
+            TyKind::Int | TyKind::Boolean => {
+                let left = left.0.into_int_value();
+                let right = right.0.into_int_value();
+
+                Ok((
+                    match operator {
+                        EQ => self
+                            .builder
+                            .build_int_compare(IntPredicate::EQ, left, right, "eq")
+                            .as_basic_value_enum(),
+                        NEQ => self
+                            .builder
+                            .build_int_compare(IntPredicate::NE, left, right, "neq")
+                            .as_basic_value_enum(),
+                        _ => return Err(CompileError::unknown_operator(operator, infix.position)),
+                    },
+                    TyKind::Boolean,
+                ))
+            }
+            TyKind::Float => {
+                let left = left.0.into_float_value();
+                let right = right.0.into_float_value();
+
+                Ok((
+                    match operator {
+                        EQ => self
+                            .builder
+                            .build_float_compare(inkwell::FloatPredicate::OEQ, left, right, "eq")
+                            .as_basic_value_enum(),
+                        NEQ => self
+                            .builder
+                            .build_float_compare(inkwell::FloatPredicate::ONE, left, right, "neq")
+                            .as_basic_value_enum(),
+                        _ => return Err(CompileError::unknown_operator(operator, infix.position)),
+                    },
+                    TyKind::Boolean,
+                ))
+            }
+            TyKind::Array(_) | TyKind::String | TyKind::Struct(_) | TyKind::Fn(_) => todo!(),
             _ => Err(CompileError::unknown_type(left.1, infix.position)),
         }
+    }
+
+    fn compile_comparison_infix_expression(
+        &mut self,
+        infix: InfixExpression,
+        left: ExpressionReturn<'ctx>,
+        right: ExpressionReturn<'ctx>,
+    ) -> CompileResult<ExpressionReturn<'ctx>> {
+        let left = left.0.into_int_value();
+        let right = right.0.into_int_value();
+
+        let operator = infix.operator;
+
+        use InfixOperator::*;
+
+        Ok((
+            match operator {
+                LT => self
+                    .builder
+                    .build_int_compare(IntPredicate::SLT, left, right, "lt")
+                    .as_basic_value_enum(),
+                GT => self
+                    .builder
+                    .build_int_compare(IntPredicate::SGT, left, right, "gt")
+                    .as_basic_value_enum(),
+                LTE => self
+                    .builder
+                    .build_int_compare(IntPredicate::SLE, left, right, "lte")
+                    .as_basic_value_enum(),
+                GTE => self
+                    .builder
+                    .build_int_compare(IntPredicate::SGE, left, right, "gte")
+                    .as_basic_value_enum(),
+                _ => return Err(CompileError::unknown_operator(operator, infix.position)),
+            },
+            TyKind::Boolean,
+        ))
     }
 
     fn compile_int_infix_expression(
@@ -646,25 +749,27 @@ impl<'ctx> Compiler<'ctx> {
 
         let operator = infix.operator;
 
+        use InfixOperator::*;
+
         Ok((
             match operator {
-                InfixOperator::Plus => self
+                Plus => self
                     .builder
                     .build_int_add(left, right, "add")
                     .as_basic_value_enum(),
-                InfixOperator::Minus => self
+                Minus => self
                     .builder
                     .build_int_sub(left, right, "sub")
                     .as_basic_value_enum(),
-                InfixOperator::Asterisk => self
+                Asterisk => self
                     .builder
                     .build_int_mul(left, right, "mul")
                     .as_basic_value_enum(),
-                InfixOperator::Slash => self
+                Slash => self
                     .builder
                     .build_int_signed_div(left, right, "div")
                     .as_basic_value_enum(),
-                InfixOperator::Percent => self
+                Percent => self
                     .builder
                     .build_int_signed_rem(left, right, "rem")
                     .as_basic_value_enum(),
@@ -685,25 +790,27 @@ impl<'ctx> Compiler<'ctx> {
 
         let operator = infix.operator;
 
+        use InfixOperator::*;
+
         Ok((
             match operator {
-                InfixOperator::Plus => self
+                Plus => self
                     .builder
                     .build_float_add(left, right, "add")
                     .as_basic_value_enum(),
-                InfixOperator::Minus => self
+                Minus => self
                     .builder
                     .build_float_sub(left, right, "sub")
                     .as_basic_value_enum(),
-                InfixOperator::Asterisk => self
+                Asterisk => self
                     .builder
                     .build_float_mul(left, right, "mul")
                     .as_basic_value_enum(),
-                InfixOperator::Slash => self
+                Slash => self
                     .builder
                     .build_float_div(left, right, "div")
                     .as_basic_value_enum(),
-                InfixOperator::Percent => self
+                Percent => self
                     .builder
                     .build_float_rem(left, right, "rem")
                     .as_basic_value_enum(),
