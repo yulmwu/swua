@@ -781,8 +781,8 @@ impl<'a> Parser<'a> {
 
             if self.current_token.kind == TokenKind::If {
                 Some(Box::new(BlockExpression {
-                    statements: vec![Statement::ExpressionStatement(ExpressionStatement {
-                        expression: Expression::IfExpression(self.parse_if_expression()?),
+                    statements: vec![Statement::ReturnStatement(ReturnStatement {
+                        value: Expression::IfExpression(self.parse_if_expression()?),
                         position: self.position,
                     })],
                     position: self.position,
