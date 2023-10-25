@@ -60,17 +60,19 @@ fn main() -> int {
 
 -   LLVM Version: 16.0.0
 
--   [x] Frontend
+-   [x] Frontend `*`
     -   [x] Lexer
     -   [x] Parser
     -   [x] AST
     -   [x] Type Checker (Semantic Analysis)
--   [x] Backend
+-   [x] Backend `*`
     -   [ ] Optimizer
     -   [x] LLVM IR Generator
 -   [ ] Standard Library
 -   [ ] Documentation
 -   [ ] More examples
 -   [ ] More tests
+
+`*`: WIP
 
 ... and more
