@@ -2,6 +2,20 @@
 
 The programming language that compiles to LLVM IR.
 
+```mermaid
+graph LR
+    A[Source Code] --> C[Parse]
+    C --> D[AST]
+    D --> E[Type Check]
+    E --> F[LLVM Optimize]
+    F --> G[LLVM IR Generate]
+    G --> H[Clang Build]
+    G --> K[JIT execution]
+    I[Linking Standard Library] --> H
+    I --> K
+    H --> J[Object File]
+```
+
 # Build and Usage
 
 ```bash
