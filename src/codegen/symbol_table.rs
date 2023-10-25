@@ -4,10 +4,32 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
 pub struct SymbolTableEntry<'a> {
-    /// Variable name, (llvm pointer, type)
-    pub variables: HashMap<String, (PointerValue<'a>, TyKind)>,
-    /// Function name, (llvm function type, function type)
-    pub functions: HashMap<String, (types::FunctionType<'a>, FunctionType)>,
+    pub variables: HashMap<String, VariableEntry<'a>>,
+    pub functions: HashMap<String, FunctionEntry<'a>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VariableEntry<'a> {
+    pub pointer: PointerValue<'a>,
+    pub ty: TyKind,
+}
+
+impl<'a> VariableEntry<'a> {
+    pub fn new(pointer: PointerValue<'a>, ty: TyKind) -> Self {
+        Self { pointer, ty }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionEntry<'a> {
+    pub function_type: types::FunctionType<'a>,
+    pub ty: FunctionType,
+}
+
+impl<'a> FunctionEntry<'a> {
+    pub fn new(function_type: types::FunctionType<'a>, ty: FunctionType) -> Self {
+        Self { function_type, ty }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -31,16 +53,18 @@ impl<'a> SymbolTable<'a> {
         }
     }
 
-    pub fn variables(&mut self) -> &mut HashMap<String, (PointerValue<'a>, TyKind)> {
+    pub fn variables(&mut self) -> &mut HashMap<String, VariableEntry<'a>> {
         &mut self.entry.variables
     }
 
-    pub fn functions(&mut self) -> &mut HashMap<String, (types::FunctionType<'a>, FunctionType)> {
+    pub fn functions(&mut self) -> &mut HashMap<String, FunctionEntry<'a>> {
         &mut self.entry.functions
     }
 
     pub fn insert_variable(&mut self, name: String, pointer: PointerValue<'a>, ty: TyKind) {
-        self.entry.variables.insert(name, (pointer, ty));
+        self.entry
+            .variables
+            .insert(name, VariableEntry::new(pointer, ty));
     }
 
     pub fn insert_function(
@@ -51,10 +75,10 @@ impl<'a> SymbolTable<'a> {
     ) {
         self.entry
             .functions
-            .insert(name, (llvm_function_type, function_type));
+            .insert(name, FunctionEntry::new(llvm_function_type, function_type));
     }
 
-    pub fn get_variable(&self, name: &str) -> Option<&(PointerValue<'a>, TyKind)> {
+    pub fn get_variable(&self, name: &str) -> Option<&VariableEntry<'a>> {
         match self.entry.variables.get(name) {
             Some(value) => Some(value),
             None => match &self.parent {
@@ -64,7 +88,7 @@ impl<'a> SymbolTable<'a> {
         }
     }
 
-    pub fn get_function(&self, name: &str) -> Option<&(types::FunctionType<'a>, FunctionType)> {
+    pub fn get_function(&self, name: &str) -> Option<&FunctionEntry<'a>> {
         match self.entry.functions.get(name) {
             Some(value) => Some(value),
             None => match &self.parent {

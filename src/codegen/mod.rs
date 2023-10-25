@@ -1,11 +1,13 @@
 pub mod error;
 pub mod infer;
 pub mod symbol_table;
+pub mod types;
 
 use self::{
     error::{CompileError, CompileResult},
     infer::{infer_expression, infer_literal},
-    symbol_table::SymbolTable,
+    symbol_table::{FunctionEntry, SymbolTable, VariableEntry},
+    types::Value,
 };
 use crate::{ast::*, parser::Parser, tokenizer::Lexer};
 use inkwell::{
@@ -16,9 +18,6 @@ use inkwell::{
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum},
     IntPredicate,
 };
-
-/// (llvm value, type)
-type ExpressionReturn<'ctx> = (BasicValueEnum<'ctx>, TyKind);
 
 pub struct Compiler<'ctx> {
     pub context: &'ctx Context,
@@ -100,11 +99,8 @@ impl<'ctx> Compiler<'ctx> {
         Ok(())
     }
 
-    pub fn compile_expression(
-        &mut self,
-        expr: Expression,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
-        let (value, ty) = match expr {
+    pub fn compile_expression(&mut self, expr: Expression) -> CompileResult<Value<'ctx>> {
+        let Value { value, ty } = match expr {
             Expression::AssignmentExpression(expr) => self.compile_assignment_expression(expr),
             Expression::BlockExpression(expr) => self.compile_block_expression(expr),
             Expression::PrefixExpression(_) => todo!(),
@@ -116,7 +112,7 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Literal(literal) => self.compile_literal_expression(literal),
             Expression::Debug(_, _) => todo!(),
         }?;
-        Ok((value, ty.analyzed(self.context)))
+        Ok(Value::new(value, ty.analyzed(self.context)))
     }
 
     fn compile_let_statement(&mut self, stmt: LetStatement) -> CompileResult<()> {
@@ -162,11 +158,13 @@ impl<'ctx> Compiler<'ctx> {
             .build_alloca(self.context.i64_type(), name.as_str());
 
         if let Some(expr) = initializer {
-            let value = self.compile_expression(expr)?.0;
+            let value = self.compile_expression(expr)?.value;
             self.builder.build_store(alloca, value);
         }
 
-        self.symbol_table.variables().insert(name, (alloca, ty));
+        self.symbol_table
+            .variables()
+            .insert(name, VariableEntry::new(alloca, ty));
 
         Ok(())
     }
@@ -202,7 +200,7 @@ impl<'ctx> Compiler<'ctx> {
 
         self.symbol_table.functions().insert(
             name.clone(),
-            (
+            FunctionEntry::new(
                 function_type,
                 FunctionType {
                     generics,
@@ -225,7 +223,7 @@ impl<'ctx> Compiler<'ctx> {
 
             self.symbol_table.variables().insert(
                 parameters[i].identifier.value.clone(),
-                (alloca, parameters[i].ty.kind.clone()),
+                VariableEntry::new(alloca, parameters[i].ty.kind.clone()),
             );
         }
 
@@ -234,7 +232,7 @@ impl<'ctx> Compiler<'ctx> {
                 Statement::LetStatement(stmt) => self.compile_let_statement(stmt)?,
                 Statement::FunctionDeclaration(func) => self.compile_function_declaration(func)?,
                 Statement::ReturnStatement(expr) => {
-                    let value = self.compile_expression(expr.value)?.0;
+                    let value = self.compile_expression(expr.value)?.value;
                     self.builder.build_return(Some(&value));
 
                     break;
@@ -277,7 +275,7 @@ impl<'ctx> Compiler<'ctx> {
 
         self.symbol_table.functions().insert(
             name,
-            (
+            FunctionEntry::new(
                 function_type,
                 FunctionType {
                     generics,
@@ -291,33 +289,30 @@ impl<'ctx> Compiler<'ctx> {
         Ok(())
     }
 
-    fn compile_literal_expression(
-        &mut self,
-        lit: Literal,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+    fn compile_literal_expression(&mut self, lit: Literal) -> CompileResult<Value<'ctx>> {
         Ok(match lit {
             Literal::Identifier(ident) => self.compile_identifier_expression(ident)?,
-            Literal::Int(i) => (
+            Literal::Int(i) => Value::new(
                 self.context
                     .i64_type()
                     .const_int(i.value as u64, false)
                     .as_basic_value_enum(),
                 TyKind::Int,
             ),
-            Literal::Float(f) => (
+            Literal::Float(f) => Value::new(
                 self.context
                     .f64_type()
                     .const_float(f.value)
                     .as_basic_value_enum(),
                 TyKind::Float,
             ),
-            Literal::String(s) => (
+            Literal::String(s) => Value::new(
                 self.builder
                     .build_global_string_ptr(s.value.as_str(), ".str")
                     .as_basic_value_enum(),
                 TyKind::String,
             ),
-            Literal::Boolean(b) => (
+            Literal::Boolean(b) => Value::new(
                 self.context
                     .bool_type()
                     .const_int(b.value as u64, false)
@@ -328,7 +323,7 @@ impl<'ctx> Compiler<'ctx> {
                 let mut values: Vec<BasicValueEnum> = Vec::new();
 
                 for val in arr.clone().elements {
-                    values.push(self.compile_expression(val)?.0);
+                    values.push(self.compile_expression(val)?.value);
                 }
 
                 let ty = infer_literal(Literal::Array(arr), &mut self.symbol_table)?;
@@ -352,7 +347,7 @@ impl<'ctx> Compiler<'ctx> {
                     self.builder.build_store(ptr, *val);
                 }
 
-                (ptr.as_basic_value_enum(), ty)
+                Value::new(ptr.as_basic_value_enum(), ty)
             }
             Literal::Struct(struct_lit) => {
                 let name = struct_lit.identifier.value;
@@ -364,7 +359,7 @@ impl<'ctx> Compiler<'ctx> {
                 let mut values: Vec<BasicValueEnum> = Vec::new();
 
                 for val in struct_lit.fields {
-                    values.push(self.compile_expression(val.1)?.0);
+                    values.push(self.compile_expression(val.1)?.value);
                 }
 
                 let ptr = self
@@ -388,22 +383,19 @@ impl<'ctx> Compiler<'ctx> {
                     self.builder.build_store(ptr, *val);
                 }
 
-                (ptr.as_basic_value_enum(), TyKind::Custom(name))
+                Value::new(ptr.as_basic_value_enum(), TyKind::Custom(name))
             }
             _ => unimplemented!(),
         })
     }
 
-    fn compile_identifier_expression(
-        &mut self,
-        ident: Identifier,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+    fn compile_identifier_expression(&mut self, ident: Identifier) -> CompileResult<Value<'ctx>> {
         let name = ident.value;
 
         Ok(match self.symbol_table.get_variable(&name) {
-            Some((ptr, ty)) => (
+            Some(VariableEntry { pointer, ty }) => Value::new(
                 self.builder
-                    .build_load(ty.to_llvm_type(self.context), *ptr, name.as_str())
+                    .build_load(ty.to_llvm_type(self.context), *pointer, name.as_str())
                     .as_basic_value_enum(),
                 ty.clone(),
             ),
@@ -411,10 +403,7 @@ impl<'ctx> Compiler<'ctx> {
         })
     }
 
-    fn compile_if_expression(
-        &mut self,
-        expr: IfExpression,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+    fn compile_if_expression(&mut self, expr: IfExpression) -> CompileResult<Value<'ctx>> {
         let IfExpression {
             condition,
             consequence,
@@ -423,10 +412,10 @@ impl<'ctx> Compiler<'ctx> {
         } = expr;
 
         let condition = self.compile_expression(*condition)?;
-        if condition.1 != TyKind::Boolean {
+        if condition.ty != TyKind::Boolean {
             return Err(CompileError::type_mismatch(
                 TyKind::Boolean,
-                condition.1,
+                condition.ty,
                 position,
             ));
         }
@@ -442,8 +431,11 @@ impl<'ctx> Compiler<'ctx> {
         let else_block = self.context.append_basic_block(function, "else");
         let merge_block = self.context.append_basic_block(function, "merge");
 
-        self.builder
-            .build_conditional_branch(condition.0.into_int_value(), then_block, else_block);
+        self.builder.build_conditional_branch(
+            condition.value.into_int_value(),
+            then_block,
+            else_block,
+        );
 
         self.builder.position_at_end(then_block);
 
@@ -456,7 +448,7 @@ impl<'ctx> Compiler<'ctx> {
 
         let else_ = match alternative {
             Some(expr) => self.compile_expression(Expression::BlockExpression(*expr))?,
-            None => (
+            None => Value::new(
                 self.context
                     .i64_type()
                     .const_int(0, false)
@@ -470,28 +462,25 @@ impl<'ctx> Compiler<'ctx> {
 
         self.builder.position_at_end(merge_block);
 
-        if then.1 != else_.1 {
+        if then.ty != else_.ty {
             return Err(CompileError::if_else_must_have_the_same_type(position));
         }
 
-        let phi = self.builder.build_phi(then.0.get_type(), "iftmp");
+        let phi = self.builder.build_phi(then.value.get_type(), "iftmp");
 
-        phi.add_incoming(&[(&then.0, then_block), (&else_.0, else_block)]);
+        phi.add_incoming(&[(&then.value, then_block), (&else_.value, else_block)]);
 
-        Ok((phi.as_basic_value(), then.1))
+        Ok(Value::new(phi.as_basic_value(), then.ty))
     }
 
-    fn compile_call_expression(
-        &mut self,
-        call: CallExpression,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+    fn compile_call_expression(&mut self, call: CallExpression) -> CompileResult<Value<'ctx>> {
         let CallExpression {
             function: callee,
             arguments,
             position,
         } = call;
 
-        let (function, (_, function_ty), name) = {
+        let (function, FunctionEntry { ty, .. }, name) = {
             match *callee {
                 Expression::Literal(Literal::Identifier(ident)) => {
                     let function = match self.module.get_function(ident.value.as_str()) {
@@ -523,12 +512,12 @@ impl<'ctx> Compiler<'ctx> {
 
         for arg in arguments {
             let expr = self.compile_expression(arg.clone())?;
-            args.push(expr.0.into());
+            args.push(expr.value.into());
 
             let arg_ty = infer_expression(arg, &mut self.symbol_table)?;
-            if arg_ty != function_ty.parameters[args.len() - 1].kind {
+            if arg_ty != ty.parameters[args.len() - 1].kind {
                 return Err(CompileError::type_mismatch(
-                    function_ty.parameters[args.len() - 1].to_string(),
+                    ty.parameters[args.len() - 1].to_string(),
                     arg_ty.to_string(),
                     position,
                 ));
@@ -541,8 +530,8 @@ impl<'ctx> Compiler<'ctx> {
             .try_as_basic_value()
             .left()
         {
-            Some(value) => (value, function_ty.ret.kind),
-            None => (
+            Some(value) => Value::new(value, ty.ret.kind),
+            None => Value::new(
                 self.context
                     .i64_type()
                     .const_int(0, false)
@@ -557,34 +546,31 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_assignment_expression(
         &mut self,
         assignment: AssignmentExpression,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+    ) -> CompileResult<Value<'ctx>> {
         let AssignmentExpression {
             identifier: Identifier { value: name, .. },
             value,
             position,
         } = assignment;
 
-        let llvm_value = self.compile_expression(*value.clone())?.0;
+        let llvm_value = self.compile_expression(*value.clone())?.value;
 
         Ok(match self.symbol_table.clone().get_variable(&name) {
-            Some((ptr, ty)) => {
-                self.builder.build_store(*ptr, llvm_value);
+            Some(VariableEntry { pointer, ty }) => {
+                self.builder.build_store(*pointer, llvm_value);
 
                 assert_eq!(
                     ty.clone(),
                     infer_expression(*value, &mut self.symbol_table)?
                 );
 
-                (llvm_value, ty.clone())
+                Value::new(llvm_value, ty.clone())
             }
             None => return Err(CompileError::identifier_not_found(name, position)),
         })
     }
 
-    fn compile_block_expression(
-        &mut self,
-        block: BlockExpression,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+    fn compile_block_expression(&mut self, block: BlockExpression) -> CompileResult<Value<'ctx>> {
         let original_symbol_table = self.symbol_table.clone();
         self.symbol_table = SymbolTable::new_with_parent(self.symbol_table.clone());
 
@@ -593,9 +579,10 @@ impl<'ctx> Compiler<'ctx> {
                 Statement::LetStatement(stmt) => self.compile_let_statement(stmt)?,
                 Statement::FunctionDeclaration(func) => self.compile_function_declaration(func)?,
                 Statement::ReturnStatement(expr) => {
-                    let value = self.compile_expression(expr.value.clone())?.0;
+                    let value = self.compile_expression(expr.value.clone())?.value;
 
-                    let result = (value, infer_expression(expr.value, &mut self.symbol_table)?);
+                    let result =
+                        Value::new(value, infer_expression(expr.value, &mut self.symbol_table)?);
                     self.symbol_table = original_symbol_table;
                     return Ok(result);
                 }
@@ -609,7 +596,7 @@ impl<'ctx> Compiler<'ctx> {
 
         self.symbol_table = original_symbol_table;
 
-        Ok((
+        Ok(Value::new(
             self.context
                 .i64_type()
                 .const_int(0, false)
@@ -618,10 +605,7 @@ impl<'ctx> Compiler<'ctx> {
         ))
     }
 
-    fn compile_infix_expression(
-        &mut self,
-        infix: InfixExpression,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+    fn compile_infix_expression(&mut self, infix: InfixExpression) -> CompileResult<Value<'ctx>> {
         let _infix = infix.clone();
         let left = _infix.left;
         let right = _infix.right;
@@ -634,10 +618,14 @@ impl<'ctx> Compiler<'ctx> {
         match infix.operator {
             EQ | NEQ => self.compile_equality_infix_expression(infix, left, right),
             LT | GT | LTE | GTE => self.compile_comparison_infix_expression(infix, left, right),
-            Plus | Minus | Asterisk | Slash | Percent => match (left.clone().1, right.1) {
-                (TyKind::Int, _) => self.compile_int_infix_expression(infix, left.0, right.0),
-                (TyKind::Float, _) => self.compile_float_infix_expression(infix, left.0, right.0),
-                _ => Err(CompileError::unknown_type(left.1, infix.position)),
+            Plus | Minus | Asterisk | Slash | Percent => match (left.clone().ty, right.ty) {
+                (TyKind::Int, _) => {
+                    self.compile_int_infix_expression(infix, left.value, right.value)
+                }
+                (TyKind::Float, _) => {
+                    self.compile_float_infix_expression(infix, left.value, right.value)
+                }
+                _ => Err(CompileError::unknown_type(left.ty, infix.position)),
             },
             _ => todo!(),
         }
@@ -646,23 +634,27 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_equality_infix_expression(
         &mut self,
         infix: InfixExpression,
-        left: ExpressionReturn<'ctx>,
-        right: ExpressionReturn<'ctx>,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
-        if left.1 != right.1 {
-            return Err(CompileError::type_mismatch(left.1, right.1, infix.position));
+        left: Value<'ctx>,
+        right: Value<'ctx>,
+    ) -> CompileResult<Value<'ctx>> {
+        if left.ty != right.ty {
+            return Err(CompileError::type_mismatch(
+                left.ty,
+                right.ty,
+                infix.position,
+            ));
         }
 
         let operator = infix.operator;
 
         use InfixOperator::*;
 
-        match left.1 {
+        match left.ty {
             TyKind::Int | TyKind::Boolean => {
-                let left = left.0.into_int_value();
-                let right = right.0.into_int_value();
+                let left = left.value.into_int_value();
+                let right = right.value.into_int_value();
 
-                Ok((
+                Ok(Value::new(
                     match operator {
                         EQ => self
                             .builder
@@ -678,10 +670,10 @@ impl<'ctx> Compiler<'ctx> {
                 ))
             }
             TyKind::Float => {
-                let left = left.0.into_float_value();
-                let right = right.0.into_float_value();
+                let left = left.value.into_float_value();
+                let right = right.value.into_float_value();
 
-                Ok((
+                Ok(Value::new(
                     match operator {
                         EQ => self
                             .builder
@@ -697,24 +689,24 @@ impl<'ctx> Compiler<'ctx> {
                 ))
             }
             TyKind::Array(_) | TyKind::String | TyKind::Struct(_) | TyKind::Fn(_) => todo!(),
-            _ => Err(CompileError::unknown_type(left.1, infix.position)),
+            _ => Err(CompileError::unknown_type(left.ty, infix.position)),
         }
     }
 
     fn compile_comparison_infix_expression(
         &mut self,
         infix: InfixExpression,
-        left: ExpressionReturn<'ctx>,
-        right: ExpressionReturn<'ctx>,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
-        let left = left.0.into_int_value();
-        let right = right.0.into_int_value();
+        left: Value<'ctx>,
+        right: Value<'ctx>,
+    ) -> CompileResult<Value<'ctx>> {
+        let left = left.value.into_int_value();
+        let right = right.value.into_int_value();
 
         let operator = infix.operator;
 
         use InfixOperator::*;
 
-        Ok((
+        Ok(Value::new(
             match operator {
                 LT => self
                     .builder
@@ -743,7 +735,7 @@ impl<'ctx> Compiler<'ctx> {
         infix: InfixExpression,
         left: BasicValueEnum<'ctx>,
         right: BasicValueEnum<'ctx>,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+    ) -> CompileResult<Value<'ctx>> {
         let left = left.into_int_value();
         let right = right.into_int_value();
 
@@ -751,7 +743,7 @@ impl<'ctx> Compiler<'ctx> {
 
         use InfixOperator::*;
 
-        Ok((
+        Ok(Value::new(
             match operator {
                 Plus => self
                     .builder
@@ -784,7 +776,7 @@ impl<'ctx> Compiler<'ctx> {
         infix: InfixExpression,
         left: BasicValueEnum<'ctx>,
         right: BasicValueEnum<'ctx>,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+    ) -> CompileResult<Value<'ctx>> {
         let left = left.into_float_value();
         let right = right.into_float_value();
 
@@ -792,7 +784,7 @@ impl<'ctx> Compiler<'ctx> {
 
         use InfixOperator::*;
 
-        Ok((
+        Ok(Value::new(
             match operator {
                 Plus => self
                     .builder
@@ -820,29 +812,26 @@ impl<'ctx> Compiler<'ctx> {
         ))
     }
 
-    fn compile_index_expression(
-        &mut self,
-        index: IndexExpression,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+    fn compile_index_expression(&mut self, index: IndexExpression) -> CompileResult<Value<'ctx>> {
         let left = self.compile_expression(*index.clone().left)?;
 
-        match left.1 {
+        match left.ty {
             TyKind::Array(_) => self.compile_array_index_expression(index, left),
             TyKind::Struct(_) => self.compile_struct_index_expression(index, left),
-            _ => Err(CompileError::unknown_type(left.1, index.position)),
+            _ => Err(CompileError::unknown_type(left.ty, index.position)),
         }
     }
 
     fn compile_array_index_expression(
         &mut self,
         index: IndexExpression,
-        left: ExpressionReturn<'ctx>,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+        left: Value<'ctx>,
+    ) -> CompileResult<Value<'ctx>> {
         let compiled_index = self.compile_expression(*index.index)?;
 
-        Ok(match compiled_index.1 {
+        Ok(match compiled_index.ty {
             TyKind::Int => {
-                let element_ty = match left.1 {
+                let element_ty = match left.ty {
                     TyKind::Array(ty) => ty.kind,
                     _ => unreachable!(),
                 };
@@ -851,26 +840,31 @@ impl<'ctx> Compiler<'ctx> {
                 let ptr = unsafe {
                     self.builder.build_gep(
                         element_ll_ty,
-                        left.0.into_pointer_value(),
-                        &[compiled_index.0.into_int_value()],
+                        left.value.into_pointer_value(),
+                        &[compiled_index.value.into_int_value()],
                         "ptr",
                     )
                 };
 
-                (
+                Value::new(
                     self.builder.build_load(element_ll_ty, ptr, "load"),
                     element_ty,
                 )
             }
-            _ => return Err(CompileError::unknown_type(compiled_index.1, index.position)),
+            _ => {
+                return Err(CompileError::unknown_type(
+                    compiled_index.ty,
+                    index.position,
+                ))
+            }
         })
     }
 
     fn compile_struct_index_expression(
         &mut self,
         _index: IndexExpression,
-        _left: ExpressionReturn<'ctx>,
-    ) -> CompileResult<ExpressionReturn<'ctx>> {
+        _left: Value<'ctx>,
+    ) -> CompileResult<Value<'ctx>> {
         todo!()
     }
 

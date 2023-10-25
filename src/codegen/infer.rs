@@ -179,9 +179,9 @@ pub fn infer_literal(literal: Literal, symbol_table: &mut SymbolTable) -> Compil
             })
         }
         Literal::Identifier(identifier) => match symbol_table.get_variable(&identifier.value) {
-            Some(ty) => ty.1.clone(),
+            Some(ty) => ty.ty.clone(),
             None => match symbol_table.get_function(&identifier.value) {
-                Some(ty) => TyKind::Fn(ty.1.clone()),
+                Some(ty) => TyKind::Fn(ty.ty.clone()),
                 None => {
                     return Err(CompileError::identifier_not_found(
                         identifier.value,
