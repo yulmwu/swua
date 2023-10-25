@@ -103,7 +103,7 @@ impl<'ctx> Compiler<'ctx> {
         let Value { value, ty } = match expr {
             Expression::AssignmentExpression(expr) => self.compile_assignment_expression(expr),
             Expression::BlockExpression(expr) => self.compile_block_expression(expr),
-            Expression::PrefixExpression(_) => todo!(),
+            Expression::PrefixExpression(expr) => self.compile_prefix_expression(expr),
             Expression::InfixExpression(expr) => self.compile_infix_expression(expr),
             Expression::IfExpression(expr) => self.compile_if_expression(expr),
             Expression::CallExpression(expr) => self.compile_call_expression(expr),
@@ -559,10 +559,10 @@ impl<'ctx> Compiler<'ctx> {
             Some(VariableEntry { pointer, ty }) => {
                 self.builder.build_store(*pointer, llvm_value);
 
-                assert_eq!(
-                    ty.clone(),
-                    infer_expression(*value, &mut self.symbol_table)?
-                );
+                let inferred_ty = infer_expression(*value, &mut self.symbol_table)?;
+                if inferred_ty != *ty {
+                    return Err(CompileError::type_mismatch(ty, &inferred_ty, position));
+                }
 
                 Value::new(llvm_value, ty.clone())
             }
@@ -603,6 +603,46 @@ impl<'ctx> Compiler<'ctx> {
                 .as_basic_value_enum(),
             TyKind::Void,
         ))
+    }
+
+    fn compile_prefix_expression(
+        &mut self,
+        prefix: PrefixExpression,
+    ) -> CompileResult<Value<'ctx>> {
+        let _prefix = prefix.clone();
+        let right = _prefix.right;
+
+        let right = self.compile_expression(*right)?;
+        let operator = _prefix.operator;
+
+        use PrefixOperator::*;
+
+        match operator {
+            Minus => match right.ty {
+                TyKind::Int => Ok(Value::new(
+                    self.builder
+                        .build_int_neg(right.value.into_int_value(), "neg")
+                        .as_basic_value_enum(),
+                    TyKind::Int,
+                )),
+                TyKind::Float => Ok(Value::new(
+                    self.builder
+                        .build_float_neg(right.value.into_float_value(), "neg")
+                        .as_basic_value_enum(),
+                    TyKind::Float,
+                )),
+                _ => Err(CompileError::unknown_type(right.ty, prefix.position)),
+            },
+            Not => match right.ty {
+                TyKind::Boolean => Ok(Value::new(
+                    self.builder
+                        .build_not(right.value.into_int_value(), "not")
+                        .as_basic_value_enum(),
+                    TyKind::Boolean,
+                )),
+                _ => Err(CompileError::unknown_type(right.ty, prefix.position)),
+            },
+        }
     }
 
     fn compile_infix_expression(&mut self, infix: InfixExpression) -> CompileResult<Value<'ctx>> {

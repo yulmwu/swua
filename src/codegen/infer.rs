@@ -1,11 +1,11 @@
 use super::{
     error::{CompileError, CompileResult},
-    symbol_table::SymbolTable,
+    symbol_table::{SymbolTable, VariableEntry},
 };
 use crate::ast::{
     expression::{
-        BlockExpression, CallExpression, Expression, IfExpression, IndexExpression,
-        InfixExpression, InfixOperator,
+        AssignmentExpression, BlockExpression, CallExpression, Expression, IfExpression,
+        IndexExpression, InfixExpression, InfixOperator, PrefixExpression, PrefixOperator,
     },
     literal::{ArrayLiteral, FunctionLiteral, Literal, StructLiteral},
     statement::Statement,
@@ -17,7 +17,24 @@ pub fn infer_expression(
     symbol_table: &mut SymbolTable,
 ) -> CompileResult<TyKind> {
     Ok(match expression {
-        Expression::AssignmentExpression(_) => todo!(),
+        Expression::AssignmentExpression(AssignmentExpression {
+            identifier,
+            value,
+            position,
+        }) => {
+            let value_ty = infer_expression(*value, symbol_table)?;
+            if let Some(VariableEntry { ty, .. }) = symbol_table.get_variable(&identifier.value) {
+                if value_ty != *ty {
+                    return Err(CompileError::type_mismatch(&value_ty, ty, position));
+                }
+            } else {
+                return Err(CompileError::identifier_not_found(
+                    identifier.value,
+                    identifier.position,
+                ));
+            }
+            value_ty
+        }
         Expression::BlockExpression(BlockExpression { statements, .. }) => {
             let mut ty = TyKind::Void;
             for statement in statements {
@@ -27,7 +44,39 @@ pub fn infer_expression(
             }
             ty
         }
-        Expression::PrefixExpression(_) => todo!(),
+        Expression::PrefixExpression(PrefixExpression {
+            operator,
+            right,
+            position,
+        }) => {
+            let right_ty = infer_expression(*right, symbol_table)?;
+            use PrefixOperator::*;
+
+            match operator {
+                Minus => {
+                    if right_ty == TyKind::Int || right_ty == TyKind::Float {
+                        right_ty
+                    } else {
+                        return Err(CompileError::type_mismatch(
+                            "Int or Float".to_string(),
+                            right_ty.to_string(),
+                            position,
+                        ));
+                    }
+                }
+                Not => {
+                    if right_ty == TyKind::Boolean {
+                        right_ty
+                    } else {
+                        return Err(CompileError::type_mismatch(
+                            TyKind::Boolean.to_string(),
+                            right_ty.to_string(),
+                            position,
+                        ));
+                    }
+                }
+            }
+        }
         Expression::InfixExpression(InfixExpression {
             left,
             right,
@@ -37,6 +86,7 @@ pub fn infer_expression(
             let left_ty = infer_expression(*left, symbol_table)?;
             let right_ty = infer_expression(*right, symbol_table)?;
             use InfixOperator::*;
+
             match operator {
                 Plus | Minus | Asterisk | Slash | Percent => {
                     if left_ty != right_ty {
