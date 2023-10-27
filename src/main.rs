@@ -1,13 +1,26 @@
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use inkwell::{context::Context, OptimizationLevel};
 use std::{fs, path::PathBuf};
 use swua::codegen::{error::CompileError, Compiler};
 
-fn compile_error(err: CompileError, filename: &str) {
-    eprintln!(
-        "Compile error at {}:{}: {}",
-        filename, err.position, err.kind
+fn compile_error(err: CompileError, name: &str, filename: &str, file_content: String) {
+    println!("{}:", "Compilation failed due to".red().bold());
+
+    let lines: Vec<&str> = file_content.split('\n').collect();
+    let line = lines[err.position.0 - 1];
+
+    let spacing = err.position.0.to_string().len();
+    println!("{}", format!(" {} |", " ".repeat(spacing)).blue());
+    println!("{}{line}", format!(" {} |", err.position.0).blue());
+    println!(
+        "{}{}{}",
+        format!(" {} |", " ".repeat(spacing)).blue(),
+        " ".repeat(err.position.1 - 1),
+        format!("^ Error: {}", err.kind).red().underline()
     );
+
+    println!(" {} {filename}:{} ({name})", "--->".blue(), err.position);
 }
 
 #[derive(Parser, Debug)]
@@ -35,18 +48,19 @@ pub enum SubCommand {
     },
 }
 
+const NAME: &str = "main"; // TODO
+
 fn main() {
     let cli = Cli::parse();
 
     match cli.subcommand {
         SubCommand::Compile { input, output } => {
+            let source_code = fs::read_to_string(input.clone()).unwrap();
             let context = Context::create();
-            let module = match Compiler::new(&context, "main")
-                .compile(&fs::read_to_string(input.clone()).unwrap())
-            {
+            let module = match Compiler::new(&context, NAME).compile(&source_code) {
                 Ok(module) => module,
                 Err(err) => {
-                    compile_error(err, input.to_str().unwrap());
+                    compile_error(err, NAME, input.to_str().unwrap(), source_code);
                     return;
                 }
             };
@@ -55,16 +69,21 @@ fn main() {
                 println!("{}", module.print_to_string().to_string());
             }
 
-            fs::write(output, module.print_to_string().to_string()).unwrap();
+            fs::write(output.clone(), module.print_to_string().to_string()).unwrap();
+
+            println!(
+                "{}: {}",
+                "Compile Finished".green().bold(),
+                output.display()
+            );
         }
         SubCommand::Run { input } => {
+            let source_code = fs::read_to_string(input.clone()).unwrap();
             let context = Context::create();
-            let module = match Compiler::new(&context, "main")
-                .compile(&fs::read_to_string(input.clone()).unwrap())
-            {
+            let module = match Compiler::new(&context, NAME).compile(&source_code) {
                 Ok(module) => module,
                 Err(err) => {
-                    compile_error(err, input.to_str().unwrap());
+                    compile_error(err, NAME, input.to_str().unwrap(), source_code);
                     return;
                 }
             };
