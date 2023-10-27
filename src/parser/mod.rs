@@ -773,6 +773,14 @@ impl<'a> Parser<'a> {
         let condition = self.parse_expression(&Priority::Lowest)?;
         self.next_token();
 
+        if self.current_token.kind != TokenKind::LBrace {
+            return Err(ParsingError::expected_next_token(
+                TokenKind::LBrace.to_string(),
+                self.current_token.kind.to_string(),
+                self.position,
+            ));
+        }
+
         let consequence = self.parse_block_expression()?;
 
         let alternative = if self.peek_token.kind == TokenKind::Else {
@@ -788,6 +796,14 @@ impl<'a> Parser<'a> {
                     position: self.position,
                 }))
             } else {
+                if self.current_token.kind != TokenKind::LBrace {
+                    return Err(ParsingError::expected_next_token(
+                        TokenKind::LBrace.to_string(),
+                        self.current_token.kind.to_string(),
+                        self.position,
+                    ));
+                }
+
                 Some(Box::new(self.parse_block_expression()?))
             }
         } else {

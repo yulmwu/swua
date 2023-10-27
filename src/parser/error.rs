@@ -63,13 +63,13 @@ impl fmt::Display for ParsingErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParsingErrorKind::ExpectedNextToken(expected, got) => {
-                write!(f, "Expected {expected} but got {got}")
+                write!(f, "expected `{expected}` but got `{got}`")
             }
-            ParsingErrorKind::ExpectedTy(expected) => write!(f, "Expected type {expected}"),
+            ParsingErrorKind::ExpectedTy(expected) => write!(f, "expected type `{expected}`"),
             ParsingErrorKind::ExpectedExpression(expected) => {
-                write!(f, "Expected expression {expected}")
+                write!(f, "expected expression `{expected}`")
             }
-            ParsingErrorKind::UnexpectedToken(token) => write!(f, "Unexpected token {token}"),
+            ParsingErrorKind::UnexpectedToken(token) => write!(f, "unexpected token `{token}`"),
         }
     }
 }
