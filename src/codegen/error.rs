@@ -161,32 +161,32 @@ impl fmt::Display for CompileErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ParsingError(kind) => write!(f, "{kind}"),
-            Self::Expected(expected) => write!(f, "Expected {expected}"),
-            Self::Unexpected(unexpected) => write!(f, "Unexpected {unexpected}"),
+            Self::Expected(expected) => write!(f, "expected `{expected}`"),
+            Self::Unexpected(unexpected) => write!(f, "unexpected `{unexpected}`"),
             Self::TypeMismatch(expected, found) => {
-                write!(f, "Expected {expected}, but found {found}")
+                write!(f, "expected `{expected}`, but found `{found}`")
             }
-            Self::IndexingNonArrayType => write!(f, "Indexing non-array type"),
+            Self::IndexingNonArrayType => write!(f, "indexing non-array type"),
             Self::ArrayElementsMustBeOfTheSameType => {
-                write!(f, "Array elements must be of the same type")
+                write!(f, "array elements must be of the same type")
             }
             Self::ArrayMustHaveAtLeastOneElement => {
-                write!(f, "Array must have at least one element")
+                write!(f, "array must have at least one element")
             }
-            Self::IdentifierNotFound(identifier) => write!(f, "Identifier {identifier} not found"),
+            Self::IdentifierNotFound(identifier) => write!(f, "identifier `{identifier}` not found"),
             Self::VariableAlreadyDeclared(identifier) => {
-                write!(f, "Variable {identifier} already declared")
+                write!(f, "variable `{identifier}` already declared")
             }
-            Self::StructNotFound(name) => write!(f, "Struct {name} not found"),
-            Self::FunctionNotFound(name) => write!(f, "Function {name} not found"),
-            Self::UnknownType(ty) => write!(f, "Unknown type {ty}"),
-            Self::UnknownOperator(operator) => write!(f, "Unknown operator {operator}"),
-            Self::IfElseMustHaveTheSameType => write!(f, "If else must have the same type"),
+            Self::StructNotFound(name) => write!(f, "struct `{name}` not found"),
+            Self::FunctionNotFound(name) => write!(f, "function `{name}` not found"),
+            Self::UnknownType(ty) => write!(f, "unknown type `{ty}`"),
+            Self::UnknownOperator(operator) => write!(f, "unknown operator `{operator}`"),
+            Self::IfElseMustHaveTheSameType => write!(f, "if else must have the same type"),
             Self::WrongNumberOfArguments(expected, found) => write!(
                 f,
-                "Wrong number of arguments: expected {expected}, found {found}"
+                "wrong number of arguments: expected `{expected}`, found `{found}`"
             ),
-            Self::CallNonFunctionType(ty) => write!(f, "Call non-function type {ty}"),
+            Self::CallNonFunctionType(ty) => write!(f, "call non-function type `{ty}`"),
         }
     }
 }

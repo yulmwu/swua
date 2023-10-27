@@ -132,14 +132,14 @@ impl<'ctx> Compiler<'ctx> {
             return Err(CompileError::variable_already_declared(name, i_position));
         }
 
-        let ty = match ty {
-            Some(ty) => ty.kind,
+        let (ty, ty_pos) = match ty {
+            Some(ty) => (ty.kind, Some(ty.position)),
             None if initializer.is_some() => {
                 let initializer = match initializer.clone() {
                     Some(expr) => expr,
                     None => return Err(CompileError::expected("Initializer", position)),
                 };
-                infer_expression(initializer, &mut self.symbol_table)?
+                (infer_expression(initializer, &mut self.symbol_table)?, None)
             }
             _ => todo!(),
         };
@@ -150,7 +150,11 @@ impl<'ctx> Compiler<'ctx> {
         };
 
         if ty != inferred_ty {
-            return Err(CompileError::type_mismatch(ty, inferred_ty, position));
+            return Err(CompileError::type_mismatch(
+                ty,
+                inferred_ty,
+                ty_pos.unwrap_or(position),
+            ));
         }
 
         let alloca = self
