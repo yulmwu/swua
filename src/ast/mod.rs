@@ -20,7 +20,7 @@ pub enum TyKind {
     Float,
     String,
     Boolean,
-    Array(Box<Ty>),
+    Array(ArrayType),
     Fn(FunctionType),
     Struct(StructType),
     Generic(Generic),
@@ -34,7 +34,7 @@ impl fmt::Display for TyKind {
             TyKind::Int | TyKind::Float | TyKind::String | TyKind::Boolean => {
                 write!(f, "{self:?}")
             }
-            TyKind::Array(ty) => write!(f, "{}[]", ty.kind),
+            TyKind::Array(array_type) => write!(f, "{array_type}"),
             TyKind::Fn(function_type) => write!(f, "{function_type}"),
             TyKind::Struct(struct_type) => write!(f, "{struct_type}"),
             TyKind::Generic(generic) => write!(f, "{generic}"),
@@ -51,7 +51,8 @@ impl TyKind {
             TyKind::Float => context.f64_type().into(),
             TyKind::String => context.i8_type().ptr_type(AddressSpace::from(0)).into(),
             TyKind::Boolean => context.bool_type().into(),
-            TyKind::Array(ty) => ty
+            TyKind::Array(array_type) => array_type
+                .element_ty
                 .kind
                 .to_llvm_type(context)
                 .ptr_type(AddressSpace::from(0))
@@ -122,6 +123,38 @@ impl Ty {
 impl fmt::Display for Ty {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.kind)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ArrayType {
+    pub element_ty: Box<Ty>,
+    pub size: Option<usize>,
+    pub position: Position,
+}
+
+impl fmt::Display for ArrayType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(
+            f,
+            "{}[{}]",
+            self.element_ty,
+            if let Some(size) = &self.size {
+                size.to_string()
+            } else {
+                String::new()
+            }
+        )
+    }
+}
+
+impl PartialEq for ArrayType {
+    fn eq(&self, other: &Self) -> bool {
+        self.element_ty == other.element_ty
+            && match (&self.size, &other.size) {
+                (Some(size), Some(other_size)) => size == other_size,
+                _ => true,
+            }
     }
 }
 
