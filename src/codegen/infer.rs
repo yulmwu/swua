@@ -9,7 +9,7 @@ use crate::ast::{
     },
     literal::{ArrayLiteral, FunctionLiteral, Literal, StructLiteral},
     statement::Statement,
-    FunctionType, StructField, StructType, Ty, TyKind,
+    ArrayType, FunctionType, StructField, StructType, Ty, TyKind,
 };
 
 pub fn infer_expression(
@@ -176,7 +176,7 @@ pub fn infer_expression(
         Expression::IndexExpression(IndexExpression { left, position, .. }) => {
             let array_ty = infer_expression(*left, symbol_table)?;
             match array_ty {
-                TyKind::Array(ty) => ty.kind.clone(),
+                TyKind::Array(array_type) => array_type.element_ty.kind.clone(),
                 _ => return Err(CompileError::indexing_non_array_type(position)),
             }
         }
@@ -193,7 +193,7 @@ pub fn infer_literal(literal: Literal, symbol_table: &mut SymbolTable) -> Compil
         Literal::Boolean(_) => TyKind::Boolean,
         Literal::Array(ArrayLiteral { elements, position }) => {
             let mut ty: Option<Ty> = None;
-            for element in elements {
+            for element in elements.clone() {
                 match ty {
                     Some(ref ty) => {
                         if ty.kind != infer_expression(element, symbol_table)? {
@@ -209,7 +209,11 @@ pub fn infer_literal(literal: Literal, symbol_table: &mut SymbolTable) -> Compil
                 }
             }
             match ty {
-                Some(ty) => TyKind::Array(Box::new(ty)),
+                Some(ty) => TyKind::Array(ArrayType {
+                    element_ty: Box::new(ty),
+                    size: Some(elements.len()),
+                    position,
+                }),
                 None => return Err(CompileError::array_must_have_at_least_one_element(position)),
             }
         }

@@ -170,7 +170,7 @@ impl<'ctx> Compiler<'ctx> {
 
         self.symbol_table
             .variables()
-            .insert(name, VariableEntry::new(alloca, ty));
+            .insert(name, VariableEntry::new(alloca, inferred_ty));
 
         Ok(())
     }
@@ -919,6 +919,11 @@ impl<'ctx> Compiler<'ctx> {
 
                     strlen
                 }
+                TyKind::Array(array_type) => self
+                    .context
+                    .i64_type()
+                    .const_int(array_type.size.unwrap() as u64, false)
+                    .as_basic_value_enum(),
                 _ => todo!(),
             },
             TyKind::Int,
@@ -961,7 +966,7 @@ impl<'ctx> Compiler<'ctx> {
         Ok(match compiled_index.ty {
             TyKind::Int => {
                 let element_ty = match left.ty {
-                    TyKind::Array(ty) => ty.kind,
+                    TyKind::Array(array_type) => array_type.element_ty.kind,
                     _ => unreachable!(),
                 };
                 let element_ll_ty = element_ty.to_llvm_type(self.context);
