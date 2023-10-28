@@ -1,10 +1,20 @@
-extern fn print(boolean) -> int;
-
-fn add(a: int, b: int) -> int {
-    return a + b;
-}
+extern fn print_str(string) -> int;
+extern fn print(int) -> int;
+extern fn print_array(int[], int) -> int;
+extern fn strlen(string) -> int;
+extern fn strcat(string, string) -> string;
+extern fn strcpy(string, string) -> string;
+extern fn malloc(int) -> string;
 
 fn main() -> int {
-    print(add(2, 3) == 2);
+    //print_str("Hello, world!" + "EX");
+    print(strlen("Hello, world!"));
+    print_str(strcat("Hello, world!", "EX"));
+    print(sizeof "Hello, world!");
+
+    //let arr = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    //print(sizeof arr);
+    //print_array(arr, sizeof arr);
+
     return 0;
 }
