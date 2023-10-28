@@ -9,12 +9,11 @@ extern fn malloc(int) -> string;
 fn main() -> int {
     //print_str("Hello, world!" + "EX");
     print(strlen("Hello, world!"));
-    print_str(strcat("Hello, world!", "EX"));
+    print_str(strcat("Hello,", " World!"));
     print(sizeof "Hello, world!");
 
-    //let arr = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-    //print(sizeof arr);
-    //print_array(arr, sizeof arr);
+    let arr = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    print_array(arr, sizeof arr);
 
     return 0;
 }
