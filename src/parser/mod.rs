@@ -450,6 +450,22 @@ impl<'a> Parser<'a> {
                     position: self.position,
                 })))
             }
+            TokenKind::Sizeof => {
+                self.next_token();
+
+                Some(Ok(Expression::SizeofExpression(SizeofExpression {
+                    expression: Box::new(self.parse_expression(&Priority::Lowest)?),
+                    position: self.position,
+                })))
+            }
+            TokenKind::SizeofType => {
+                self.next_token();
+
+                Some(Ok(Expression::SizeofTypeExpression(SizeofTypeExpression {
+                    ty: Box::new(self.parse_ty()?),
+                    position: self.position,
+                })))
+            }
             TokenKind::Debug => {
                 self.next_token();
 
