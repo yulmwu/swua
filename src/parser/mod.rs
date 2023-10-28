@@ -867,18 +867,42 @@ impl<'a> Parser<'a> {
             self.next_token();
             self.next_token();
 
-            ty = Ok(TyKind::Array(Box::new(Ty {
-                kind: ty?,
-                position: self.position,
-            })));
+            let mut size = None;
 
             if self.current_token.kind != TokenKind::RBracket {
-                return Err(ParsingError::expected_next_token(
-                    TokenKind::RBracket.to_string(),
-                    self.current_token.kind.to_string(),
-                    self.position,
-                ));
+                let expression = self.parse_expression(&Priority::Lowest)?;
+                self.next_token();
+
+                if self.current_token.kind != TokenKind::RBracket {
+                    return Err(ParsingError::expected_next_token(
+                        TokenKind::RBracket.to_string(),
+                        self.current_token.kind.to_string(),
+                        self.position,
+                    ));
+                }
+
+                match expression {
+                    Expression::Literal(Literal::Int(int)) => {
+                        size = Some(int.value as usize);
+                    }
+                    _ => {
+                        return Err(ParsingError::expected_next_token(
+                            "Int".to_string(),
+                            self.current_token.kind.to_string(),
+                            self.position,
+                        ));
+                    }
+                }
             }
+
+            ty = Ok(TyKind::Array(ArrayType {
+                element_ty: Box::new(Ty {
+                    kind: ty?,
+                    position: self.position,
+                }),
+                size,
+                position: self.position,
+            }));
         }
 
         ty
