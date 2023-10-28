@@ -1,4 +1,4 @@
-use super::{Identifier, Literal, Position, Statement};
+use super::{Identifier, Literal, Position, Statement, Ty};
 use crate::tokenizer::token::TokenKind;
 use std::fmt;
 
@@ -11,6 +11,8 @@ pub enum Expression {
     IfExpression(IfExpression),
     CallExpression(CallExpression),
     TypeofExpression(TypeofExpression),
+    SizeofExpression(SizeofExpression),
+    SizeofTypeExpression(SizeofTypeExpression),
     IndexExpression(IndexExpression),
     Literal(Literal),
     Debug(Box<Expression>, Position),
@@ -47,6 +49,18 @@ pub struct CallExpression {
 #[derive(Debug, PartialEq, Clone)]
 pub struct TypeofExpression {
     pub expression: Box<Expression>,
+    pub position: Position,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct SizeofExpression {
+    pub expression: Box<Expression>,
+    pub position: Position,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct SizeofTypeExpression {
+    pub ty: Box<Ty>,
     pub position: Position,
 }
 

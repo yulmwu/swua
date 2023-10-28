@@ -93,7 +93,10 @@ pub fn infer_expression(
                         return Err(CompileError::type_mismatch(left_ty, right_ty, position));
                     }
 
-                    if left_ty == TyKind::Int || left_ty == TyKind::Float {
+                    if left_ty == TyKind::Int
+                        || left_ty == TyKind::Float
+                        || (left_ty == TyKind::String && operator == Plus)
+                    {
                         left_ty
                     } else {
                         return Err(CompileError::type_mismatch(
@@ -167,7 +170,9 @@ pub fn infer_expression(
                 }
             }
         }
-        Expression::TypeofExpression(_) => todo!(),
+        Expression::TypeofExpression(_)
+        | Expression::SizeofExpression(_)
+        | Expression::SizeofTypeExpression(_) => TyKind::Int,
         Expression::IndexExpression(IndexExpression { left, position, .. }) => {
             let array_ty = infer_expression(*left, symbol_table)?;
             match array_ty {

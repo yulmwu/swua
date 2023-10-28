@@ -173,7 +173,9 @@ impl fmt::Display for CompileErrorKind {
             Self::ArrayMustHaveAtLeastOneElement => {
                 write!(f, "array must have at least one element")
             }
-            Self::IdentifierNotFound(identifier) => write!(f, "identifier `{identifier}` not found"),
+            Self::IdentifierNotFound(identifier) => {
+                write!(f, "identifier `{identifier}` not found")
+            }
             Self::VariableAlreadyDeclared(identifier) => {
                 write!(f, "variable `{identifier}` already declared")
             }

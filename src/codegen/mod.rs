@@ -16,7 +16,7 @@ use inkwell::{
     module::Module,
     types::BasicType,
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum},
-    IntPredicate,
+    AddressSpace, IntPredicate,
 };
 
 pub struct Compiler<'ctx> {
@@ -107,7 +107,9 @@ impl<'ctx> Compiler<'ctx> {
             Expression::InfixExpression(expr) => self.compile_infix_expression(expr),
             Expression::IfExpression(expr) => self.compile_if_expression(expr),
             Expression::CallExpression(expr) => self.compile_call_expression(expr),
-            Expression::TypeofExpression(_) => todo!(),
+            Expression::TypeofExpression(expr) => self.compile_typeof_expression(expr),
+            Expression::SizeofExpression(expr) => self.compile_sizeof_expression(expr),
+            Expression::SizeofTypeExpression(expr) => self.compile_sizeof_type_expression(expr),
             Expression::IndexExpression(expr) => self.compile_index_expression(expr),
             Expression::Literal(literal) => self.compile_literal_expression(literal),
             Expression::Debug(_, _) => todo!(),
@@ -669,6 +671,7 @@ impl<'ctx> Compiler<'ctx> {
                 (TyKind::Float, _) => {
                     self.compile_float_infix_expression(infix, left.value, right.value)
                 }
+                (TyKind::String, _) => todo!(),
                 _ => Err(CompileError::unknown_type(left.ty, infix.position)),
             },
             _ => todo!(),
@@ -853,6 +856,88 @@ impl<'ctx> Compiler<'ctx> {
                 _ => return Err(CompileError::unknown_operator(operator, infix.position)),
             },
             TyKind::Float,
+        ))
+    }
+
+    fn compile_typeof_expression(&mut self, expr: TypeofExpression) -> CompileResult<Value<'ctx>> {
+        let expr = self.compile_expression(*expr.expression)?;
+
+        let ty_num = match expr.ty {
+            TyKind::Int => 0,
+            TyKind::Float => 1,
+            TyKind::String => 2,
+            TyKind::Boolean => 3,
+            TyKind::Array(_) => 4,
+            TyKind::Struct(_) => 5,
+            TyKind::Fn(_) => 6,
+            TyKind::Void => 7,
+            _ => unreachable!(),
+        };
+
+        Ok(Value::new(
+            self.context
+                .i64_type()
+                .const_int(ty_num as u64, false)
+                .as_basic_value_enum(),
+            TyKind::Int,
+        ))
+    }
+
+    fn compile_sizeof_expression(&mut self, expr: SizeofExpression) -> CompileResult<Value<'ctx>> {
+        let compiled_expr = self.compile_expression(*expr.expression)?;
+
+        Ok(Value::new(
+            match compiled_expr.ty {
+                TyKind::Int | TyKind::Float | TyKind::Boolean => {
+                    return self.compile_sizeof_type_expression(SizeofTypeExpression {
+                        ty: Box::new(Ty::new(compiled_expr.ty.clone(), expr.position)),
+                        position: expr.position,
+                    })
+                }
+                TyKind::String => {
+                    let strlen = self.module.get_function("strlen").unwrap();
+
+                    let ptr = self.builder.build_alloca(
+                        self.context.i64_type().ptr_type(AddressSpace::from(0)),
+                        "ptr",
+                    );
+
+                    self.builder.build_store(ptr, compiled_expr.value);
+
+                    let ptr = self.builder.build_load(
+                        self.context.i64_type().ptr_type(AddressSpace::from(0)),
+                        ptr,
+                        "ptr",
+                    );
+
+                    let strlen = self
+                        .builder
+                        .build_call(strlen, &[ptr.as_basic_value_enum().into()], "strlen")
+                        .try_as_basic_value()
+                        .left()
+                        .unwrap();
+
+                    strlen
+                }
+                _ => todo!(),
+            },
+            TyKind::Int,
+        ))
+    }
+
+    fn compile_sizeof_type_expression(
+        &mut self,
+        expr: SizeofTypeExpression,
+    ) -> CompileResult<Value<'ctx>> {
+        Ok(Value::new(
+            match expr.ty.kind {
+                TyKind::Int => self.context.i64_type().size_of().as_basic_value_enum(),
+                TyKind::Float => self.context.f64_type().size_of().as_basic_value_enum(),
+                TyKind::String => self.context.i64_type().size_of().as_basic_value_enum(),
+                TyKind::Boolean => self.context.bool_type().size_of().as_basic_value_enum(),
+                _ => todo!(),
+            },
+            TyKind::Int,
         ))
     }
 
