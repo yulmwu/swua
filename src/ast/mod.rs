@@ -2,10 +2,12 @@ pub mod expression;
 pub mod literal;
 pub mod statement;
 
+use crate::codegen::error::{CompileError, CompileResult};
 pub use expression::*;
 use inkwell::{
     context::Context,
     types::{BasicType, BasicTypeEnum},
+    values::IntValue,
     AddressSpace,
 };
 pub use literal::*;
@@ -69,6 +71,17 @@ impl TyKind {
             other => other.clone(),
         }
     }
+
+    pub fn size_of<'a>(
+        &self,
+        context: &'a Context,
+        position: Position,
+    ) -> CompileResult<IntValue<'a>> {
+        Ok(match self.to_llvm_type(context).size_of() {
+            Some(size) => size,
+            None => return Err(CompileError::unknown_size(position)),
+        })
+    }
 }
 
 pub type IdentifierGeneric = Vec<Identifier>;
@@ -117,6 +130,10 @@ pub struct Ty {
 impl Ty {
     pub fn new(ty: TyKind, position: Position) -> Self {
         Self { kind: ty, position }
+    }
+
+    pub fn size_of<'a>(&self, context: &'a Context) -> CompileResult<IntValue<'a>> {
+        self.kind.size_of(context, self.position)
     }
 }
 
