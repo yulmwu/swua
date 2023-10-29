@@ -16,7 +16,7 @@ use inkwell::{
     module::Module,
     types::BasicType,
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum},
-    AddressSpace, IntPredicate,
+    IntPredicate,
 };
 
 pub struct Compiler<'ctx> {
@@ -114,7 +114,7 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Literal(literal) => self.compile_literal_expression(literal),
             Expression::Debug(_, _) => todo!(),
         }?;
-        Ok(Value::new(value, ty.analyzed(self.context)))
+        Ok(Value::new(value, ty))
     }
 
     fn compile_let_statement(&mut self, stmt: LetStatement) -> CompileResult<()> {
@@ -517,17 +517,14 @@ impl<'ctx> Compiler<'ctx> {
         let mut args: Vec<BasicMetadataValueEnum> = Vec::new();
 
         for arg in arguments {
-            let expr = self.compile_expression(arg.clone())?;
-            args.push(expr.value.into());
+            let value = self.compile_expression(arg.clone())?;
 
             let arg_ty = infer_expression(arg, &mut self.symbol_table)?;
-            if arg_ty != ty.parameters[args.len() - 1].kind {
-                return Err(CompileError::type_mismatch(
-                    ty.parameters[args.len() - 1].to_string(),
-                    arg_ty.to_string(),
-                    position,
-                ));
+            if arg_ty != value.ty {
+                return Err(CompileError::type_mismatch(value.ty, arg_ty, position));
             }
+
+            args.push(value.value.into());
         }
 
         let result = match self
@@ -884,50 +881,24 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_sizeof_expression(&mut self, expr: SizeofExpression) -> CompileResult<Value<'ctx>> {
-        let compiled_expr = self.compile_expression(*expr.expression)?;
+        let value = self.compile_expression(*expr.expression)?;
 
-        Ok(Value::new(
-            match compiled_expr.ty {
-                TyKind::Int | TyKind::Float | TyKind::Boolean => {
-                    return self.compile_sizeof_type_expression(SizeofTypeExpression {
-                        ty: Box::new(Ty::new(compiled_expr.ty.clone(), expr.position)),
-                        position: expr.position,
-                    })
-                }
-                TyKind::String => {
-                    let strlen = self.module.get_function("strlen").unwrap();
+        let size = match value.ty {
+            TyKind::Array(array_type) => {
+                let element_size = array_type.element_ty.size_of(self.context)?;
+                let length = match array_type.size {
+                    Some(length) => length,
+                    _ => return Err(CompileError::unknown_size(expr.position)),
+                };
+                let length = self.context.i64_type().const_int(length as u64, false);
 
-                    let ptr = self.builder.build_alloca(
-                        self.context.i64_type().ptr_type(AddressSpace::from(0)),
-                        "ptr",
-                    );
+                self.builder
+                    .build_int_mul(element_size, length, "sizeof_array")
+            }
+            ty => ty.size_of(self.context, expr.position)?,
+        };
 
-                    self.builder.build_store(ptr, compiled_expr.value);
-
-                    let ptr = self.builder.build_load(
-                        self.context.i64_type().ptr_type(AddressSpace::from(0)),
-                        ptr,
-                        "ptr",
-                    );
-
-                    let strlen = self
-                        .builder
-                        .build_call(strlen, &[ptr.as_basic_value_enum().into()], "strlen")
-                        .try_as_basic_value()
-                        .left()
-                        .unwrap();
-
-                    strlen
-                }
-                TyKind::Array(array_type) => self
-                    .context
-                    .i64_type()
-                    .const_int(array_type.size.unwrap() as u64, false)
-                    .as_basic_value_enum(),
-                _ => todo!(),
-            },
-            TyKind::Int,
-        ))
+        Ok(Value::new(size.as_basic_value_enum(), TyKind::Int))
     }
 
     fn compile_sizeof_type_expression(
@@ -935,13 +906,7 @@ impl<'ctx> Compiler<'ctx> {
         expr: SizeofTypeExpression,
     ) -> CompileResult<Value<'ctx>> {
         Ok(Value::new(
-            match expr.ty.kind {
-                TyKind::Int => self.context.i64_type().size_of().as_basic_value_enum(),
-                TyKind::Float => self.context.f64_type().size_of().as_basic_value_enum(),
-                TyKind::String => self.context.i64_type().size_of().as_basic_value_enum(),
-                TyKind::Boolean => self.context.bool_type().size_of().as_basic_value_enum(),
-                _ => todo!(),
-            },
+            expr.ty.size_of(self.context)?.as_basic_value_enum(),
             TyKind::Int,
         ))
     }

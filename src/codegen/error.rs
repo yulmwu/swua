@@ -108,6 +108,10 @@ impl CompileError {
         )
     }
 
+    pub fn unknown_size(position: Position) -> Self {
+        Self::new(CompileErrorKind::UnknownSize, position)
+    }
+
     pub fn if_else_must_have_the_same_type(position: Position) -> Self {
         Self::new(CompileErrorKind::IfElseMustHaveTheSameType, position)
     }
@@ -152,6 +156,7 @@ pub enum CompileErrorKind {
     FunctionNotFound(String),
     UnknownType(String),
     UnknownOperator(String),
+    UnknownSize,
     IfElseMustHaveTheSameType,
     WrongNumberOfArguments(usize, usize),
     CallNonFunctionType(String),
@@ -183,6 +188,7 @@ impl fmt::Display for CompileErrorKind {
             Self::FunctionNotFound(name) => write!(f, "function `{name}` not found"),
             Self::UnknownType(ty) => write!(f, "unknown type `{ty}`"),
             Self::UnknownOperator(operator) => write!(f, "unknown operator `{operator}`"),
+            Self::UnknownSize => write!(f, "unknown size"),
             Self::IfElseMustHaveTheSameType => write!(f, "if else must have the same type"),
             Self::WrongNumberOfArguments(expected, found) => write!(
                 f,
