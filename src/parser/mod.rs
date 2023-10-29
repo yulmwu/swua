@@ -462,7 +462,7 @@ impl<'a> Parser<'a> {
                 self.next_token();
 
                 Some(Ok(Expression::SizeofTypeExpression(SizeofTypeExpression {
-                    ty: Box::new(self.parse_ty()?),
+                    ty: Box::new(self.parse_ty_without_next()?),
                     position: self.position,
                 })))
             }
@@ -837,13 +837,19 @@ impl<'a> Parser<'a> {
     fn parse_ty(&mut self) -> ParseResult<Ty> {
         let position = self.position;
 
-        let result = self.parse_ty_without_next();
+        let result = self.parse_ty_kind();
         self.next_token();
 
-        result.map(|ty| Ty { kind: ty, position })
+        result.map(|kind| Ty { kind, position })
     }
 
-    fn parse_ty_without_next(&mut self) -> ParseResult<TyKind> {
+    fn parse_ty_without_next(&mut self) -> ParseResult<Ty> {
+        let position = self.position;
+
+        self.parse_ty_kind().map(|kind| Ty { kind, position })
+    }
+
+    fn parse_ty_kind(&mut self) -> ParseResult<TyKind> {
         let mut ty: Result<TyKind, ParsingError> = match self.current_token.kind {
             TokenKind::IntType => Ok(TyKind::Int),
             TokenKind::FloatType => Ok(TyKind::Float),
@@ -936,7 +942,7 @@ impl<'a> Parser<'a> {
         self.expect_token(&TokenKind::RParen)?;
         self.expect_token(&TokenKind::Arrow)?;
 
-        let return_type = self.parse_ty_without_next()?;
+        let return_type = self.parse_ty_kind()?;
 
         Ok(FunctionType {
             generics,
