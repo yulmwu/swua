@@ -1,0 +1,15 @@
+extern fn print(int) -> int;
+extern fn print_array(int[], int) -> int;
+
+struct Foo {
+    x: int[],
+    y: int,
+};
+
+fn main() -> int {
+    let x = struct Foo { x: [1, 2, 3], y: 5 };
+    
+    print(x["y"]);
+    //print_array(x["x"], 3);
+    return 0;
+}
