@@ -1,6 +1,8 @@
 pub mod error;
 pub mod helpers;
 
+use std::collections::HashMap;
+
 use self::error::{ParseResult, ParsingError};
 use crate::{
     ast::*,
@@ -113,7 +115,7 @@ impl<'a> Parser<'a> {
             TokenKind::Return => Statement::ReturnStatement(self.parse_return_statement()?),
             TokenKind::Type => Statement::TypeStatement(self.parse_type_statement()?),
             TokenKind::Declare => Statement::DeclareStatement(self.parse_declare_statement()?),
-            TokenKind::Struct => Statement::StructStatement(self.parse_struct_statement()?),
+            TokenKind::Struct => Statement::StructDeclaration(self.parse_struct_declaration()?),
             _ => self.parse_expression_statement()?,
         })
     }
@@ -170,14 +172,6 @@ impl<'a> Parser<'a> {
         let ident = ident_token_to_string! { self };
         self.next_token();
 
-        let generics = if self.current_token.kind == TokenKind::LT {
-            let result = self.parse_generic_identifier()?;
-            self.next_token();
-            Some(result)
-        } else {
-            None
-        };
-
         self.expect_token(&TokenKind::LParen)?;
 
         let mut parameters = Vec::new();
@@ -212,7 +206,6 @@ impl<'a> Parser<'a> {
             },
             parameters,
             ret,
-            generics,
             position: self.position,
         })
     }
@@ -249,14 +242,6 @@ impl<'a> Parser<'a> {
         let ident = ident_token_to_string! { self };
         self.next_token();
 
-        let generics = if self.current_token.kind == TokenKind::LT {
-            let generic = self.parse_generic_identifier()?;
-            self.next_token();
-            Some(generic)
-        } else {
-            None
-        };
-
         self.expect_token(&TokenKind::Assign)?;
 
         let ty = self.parse_ty()?;
@@ -275,7 +260,6 @@ impl<'a> Parser<'a> {
                 position: self.position,
             },
             ty,
-            generics,
             position: self.position,
         })
     }
@@ -308,23 +292,15 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_struct_statement(&mut self) -> ParseResult<StructStatement> {
+    fn parse_struct_declaration(&mut self) -> ParseResult<StructDeclaration> {
         self.next_token();
 
         let ident = ident_token_to_string! { self };
         self.next_token();
 
-        let generics = if self.current_token.kind == TokenKind::LT {
-            let generic = self.parse_generic_identifier()?;
-            self.next_token();
-            Some(generic)
-        } else {
-            None
-        };
-
         self.expect_token(&TokenKind::LBrace)?;
 
-        let mut fields = Vec::new();
+        let mut fields = HashMap::new();
 
         while self.current_token.kind != TokenKind::RBrace {
             let key = Identifier {
@@ -337,11 +313,7 @@ impl<'a> Parser<'a> {
 
             let value = self.parse_ty()?;
 
-            fields.push(StructField {
-                identifier: key,
-                ty: value,
-                position: self.position,
-            });
+            fields.insert(key.value.clone(), value);
 
             if self.current_token.kind == TokenKind::RBrace {
                 break;
@@ -352,12 +324,11 @@ impl<'a> Parser<'a> {
 
         self.expect_token(&TokenKind::RBrace)?;
 
-        Ok(StructStatement {
+        Ok(StructDeclaration {
             identifier: Identifier {
                 value: ident,
                 position: self.position,
             },
-            generics,
             fields,
             position: self.position,
         })
@@ -539,7 +510,7 @@ impl<'a> Parser<'a> {
                     let mut arguments = Vec::new();
 
                     if self.current_token.kind != TokenKind::RParen {
-                        arguments.push(self.parse_expression(&Priority::Lowest)?);
+                        arguments.push((self.parse_expression(&Priority::Lowest)?, self.position));
                         self.next_token();
 
                         if self.current_token.kind == TokenKind::Comma {
@@ -547,7 +518,8 @@ impl<'a> Parser<'a> {
                         }
 
                         while self.current_token.kind != TokenKind::RParen {
-                            arguments.push(self.parse_expression(&Priority::Lowest)?);
+                            arguments
+                                .push((self.parse_expression(&Priority::Lowest)?, self.position));
                             self.next_token();
 
                             if self.current_token.kind == TokenKind::RParen {
@@ -631,7 +603,8 @@ impl<'a> Parser<'a> {
         }
 
         while self.current_token.kind != TokenKind::RBrace {
-            elements.push(self.parse_expression(&Priority::Lowest)?);
+            let element_position = self.position;
+            elements.push((self.parse_expression(&Priority::Lowest)?, element_position));
             self.next_token();
 
             if self.current_token.kind == TokenKind::RBracket {
@@ -657,12 +630,14 @@ impl<'a> Parser<'a> {
 
     fn parse_struct_literal(&mut self) -> ParseResult<StructLiteral> {
         self.next_token();
-        let identifier = ident_token_to_string! { self };
-        self.next_token();
 
+        let identifier_position = self.position;
+        let identifier = ident_token_to_string! { self };
+
+        self.next_token();
         self.expect_token(&TokenKind::LBrace)?;
 
-        let mut fields = Vec::new();
+        let mut fields = HashMap::new();
 
         while self.current_token.kind != TokenKind::RBrace {
             let key = Identifier {
@@ -673,10 +648,11 @@ impl<'a> Parser<'a> {
 
             self.expect_token(&TokenKind::Colon)?;
 
+            let value_position = self.position;
             let value = self.parse_expression(&Priority::Lowest)?;
             self.next_token();
 
-            fields.push((key, value));
+            fields.insert(key.value.clone(), (value, value_position));
 
             if self.current_token.kind == TokenKind::RBrace {
                 break;
@@ -696,7 +672,7 @@ impl<'a> Parser<'a> {
         Ok(StructLiteral {
             identifier: Identifier {
                 value: identifier,
-                position: self.position,
+                position: identifier_position,
             },
             fields,
             position: self.position,
@@ -705,15 +681,6 @@ impl<'a> Parser<'a> {
 
     fn parse_function_literal(&mut self) -> ParseResult<FunctionLiteral> {
         self.next_token();
-
-        let generics = if self.current_token.kind == TokenKind::LT {
-            let generic = self.parse_generic_identifier()?;
-            self.next_token();
-            Some(generic)
-        } else {
-            None
-        };
-
         self.expect_token(&TokenKind::LParen)?;
 
         let mut parameters = Vec::new();
@@ -775,7 +742,6 @@ impl<'a> Parser<'a> {
         };
 
         Ok(FunctionLiteral {
-            generics,
             parameters,
             ret,
             body,
@@ -863,12 +829,6 @@ impl<'a> Parser<'a> {
             )),
         };
 
-        if self.peek_token(&TokenKind::LT) {
-            let generics = self.parse_generic()?;
-
-            ty = Ok(TyKind::Generic(generics));
-        }
-
         if self.peek_token(&TokenKind::LBracket) {
             self.next_token();
             self.next_token();
@@ -916,15 +876,6 @@ impl<'a> Parser<'a> {
 
     fn parse_function_type(&mut self) -> ParseResult<FunctionType> {
         self.next_token();
-
-        let generics = if self.current_token.kind == TokenKind::LT {
-            let generic = self.parse_generic_identifier()?;
-            self.next_token();
-            Some(generic)
-        } else {
-            None
-        };
-
         self.expect_token(&TokenKind::LParen)?;
 
         let mut parameters = Vec::new();
@@ -945,7 +896,6 @@ impl<'a> Parser<'a> {
         let return_type = self.parse_ty_kind()?;
 
         Ok(FunctionType {
-            generics,
             parameters,
             ret: Box::new(Ty {
                 kind: return_type,
@@ -953,58 +903,5 @@ impl<'a> Parser<'a> {
             }),
             position: self.position,
         })
-    }
-
-    fn parse_generic(&mut self) -> ParseResult<Generic> {
-        let ident = ident_token_to_string! { self };
-        self.next_token();
-
-        let mut generics = Vec::new();
-
-        self.expect_token(&TokenKind::LT)?;
-
-        while self.current_token.kind != TokenKind::GT {
-            let ty = self.parse_ty()?;
-
-            generics.push(ty);
-
-            if self.current_token.kind == TokenKind::GT {
-                break;
-            }
-
-            self.expect_token(&TokenKind::Comma)?;
-        }
-
-        Ok(Generic::new(
-            Ty {
-                kind: TyKind::Custom(ident),
-                position: self.position,
-            },
-            generics,
-        ))
-    }
-
-    fn parse_generic_identifier(&mut self) -> ParseResult<IdentifierGeneric> {
-        let mut generics = Vec::new();
-
-        self.expect_token(&TokenKind::LT)?;
-
-        while self.current_token.kind != TokenKind::GT {
-            let ident = ident_token_to_string! { self };
-            self.next_token();
-
-            generics.push(Identifier {
-                value: ident,
-                position: self.position,
-            });
-
-            if self.current_token.kind == TokenKind::GT {
-                break;
-            }
-
-            self.expect_token(&TokenKind::Comma)?;
-        }
-
-        Ok(generics)
     }
 }

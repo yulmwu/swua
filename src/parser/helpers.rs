@@ -4,10 +4,11 @@ macro_rules! ident_token_to_string {
         match $self.current_token.kind {
             $crate::tokenizer::TokenKind::IDENT(ref ident) => ident.to_string(),
             _ => {
-                return Err(ParsingError::unexpected_token(
+                return Err(ParsingError::expected_next_token(
+                    "Identifier".to_string(),
                     $self.current_token.kind.to_string(),
-                    $self.position,
-                ));
+                    $self.current_token.position,
+                ))
             }
         }
     };
