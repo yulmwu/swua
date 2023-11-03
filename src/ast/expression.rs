@@ -42,7 +42,7 @@ pub struct IfExpression {
 #[derive(Debug, PartialEq, Clone)]
 pub struct CallExpression {
     pub function: Box<Expression>,
-    pub arguments: Vec<Expression>,
+    pub arguments: Vec<(Expression, Position)>,
     pub position: Position,
 }
 

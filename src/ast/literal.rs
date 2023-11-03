@@ -1,4 +1,5 @@
-use super::{BlockExpression, Expression, IdentifierGeneric, Position, Ty};
+use super::{BlockExpression, Expression, Position, Ty};
+use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Literal {
@@ -45,7 +46,6 @@ scalar_type! {
 pub struct FunctionLiteral {
     pub parameters: Vec<Parameter>,
     pub body: BlockExpression,
-    pub generics: Option<IdentifierGeneric>,
     pub ret: Ty,
     pub position: Position,
 }
@@ -59,13 +59,13 @@ pub struct Parameter {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ArrayLiteral {
-    pub elements: Vec<Expression>,
+    pub elements: Vec<(Expression, Position)>,
     pub position: Position,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct StructLiteral {
     pub identifier: Identifier,
-    pub fields: Vec<(Identifier, Expression)>,
+    pub fields: HashMap<String, (Expression, Position)>,
     pub position: Position,
 }

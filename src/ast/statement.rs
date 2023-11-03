@@ -1,6 +1,5 @@
-use super::{
-    Expression, FunctionLiteral, Identifier, IdentifierGeneric, Position, StructField, Ty,
-};
+use super::{Expression, FunctionLiteral, Identifier, Position, Ty};
+use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
@@ -10,7 +9,7 @@ pub enum Statement {
     ReturnStatement(ReturnStatement),
     TypeStatement(TypeStatement),
     DeclareStatement(DeclareStatement),
-    StructStatement(StructStatement),
+    StructDeclaration(StructDeclaration),
     ExpressionStatement(ExpressionStatement),
 }
 
@@ -34,7 +33,6 @@ pub struct ExternFunctionDeclaration {
     pub identifier: Identifier,
     pub parameters: Vec<Ty>,
     pub ret: Ty,
-    pub generics: Option<IdentifierGeneric>,
     pub position: Position,
 }
 
@@ -42,7 +40,6 @@ pub struct ExternFunctionDeclaration {
 pub struct TypeStatement {
     pub identifier: Identifier,
     pub ty: Ty,
-    pub generics: Option<IdentifierGeneric>,
     pub position: Position,
 }
 
@@ -54,10 +51,9 @@ pub struct DeclareStatement {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct StructStatement {
+pub struct StructDeclaration {
     pub identifier: Identifier,
-    pub generics: Option<IdentifierGeneric>,
-    pub fields: Vec<StructField>,
+    pub fields: HashMap<String, Ty>,
     pub position: Position,
 }
 

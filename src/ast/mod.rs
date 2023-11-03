@@ -2,7 +2,10 @@ pub mod expression;
 pub mod literal;
 pub mod statement;
 
-use crate::codegen::error::{CompileError, CompileResult};
+use crate::codegen::{
+    error::{CompileError, CompileResult},
+    symbol_table::SymbolTable,
+};
 pub use expression::*;
 use inkwell::{
     context::Context,
@@ -12,7 +15,7 @@ use inkwell::{
 };
 pub use literal::*;
 pub use statement::*;
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
 pub type Program = Vec<Statement>;
 
@@ -25,7 +28,6 @@ pub enum TyKind {
     Array(ArrayType),
     Fn(FunctionType),
     Struct(StructType),
-    Generic(Generic),
     Custom(String),
     Void,
 }
@@ -39,7 +41,6 @@ impl fmt::Display for TyKind {
             TyKind::Array(array_type) => write!(f, "{array_type}"),
             TyKind::Fn(function_type) => write!(f, "{function_type}"),
             TyKind::Struct(struct_type) => write!(f, "{struct_type}"),
-            TyKind::Generic(generic) => write!(f, "{generic}"),
             TyKind::Custom(identifier) => write!(f, "{identifier}"),
             TyKind::Void => write!(f, "Void"),
         }
@@ -47,8 +48,12 @@ impl fmt::Display for TyKind {
 }
 
 impl TyKind {
-    pub fn to_llvm_type<'a>(&self, context: &'a Context) -> BasicTypeEnum<'a> {
-        match self {
+    pub fn to_llvm_type<'a>(
+        &self,
+        context: &'a Context,
+        symbol_table: &mut SymbolTable,
+    ) -> BasicTypeEnum<'a> {
+        match self.analyze(symbol_table).unwrap() {
             TyKind::Int => context.i64_type().into(),
             TyKind::Float => context.f64_type().into(),
             TyKind::String => context.i8_type().ptr_type(AddressSpace::from(0)).into(),
@@ -56,54 +61,52 @@ impl TyKind {
             TyKind::Array(array_type) => array_type
                 .element_ty
                 .kind
-                .to_llvm_type(context)
+                .to_llvm_type(context, symbol_table)
                 .ptr_type(AddressSpace::from(0))
                 .into(),
-            ty => unimplemented!("{ty:?}"),
+            TyKind::Struct(struct_type) => context
+                .struct_type(
+                    &struct_type
+                        .fields
+                        .iter()
+                        .map(|field| field.1 .1.kind.to_llvm_type(context, symbol_table))
+                        .collect::<Vec<_>>(),
+                    false,
+                )
+                .ptr_type(AddressSpace::from(0))
+                .into(),
+            _ => unimplemented!(),
         }
     }
 
-    pub fn analyzed(&self, _: &Context) -> TyKind {
-        match self {
-            TyKind::Custom(_) => {
-                todo!()
+    pub fn analyze(&self, symbol_table: &mut SymbolTable) -> CompileResult<TyKind> {
+        Ok(match self {
+            TyKind::Array(array_type) => {
+                let element_ty = array_type.element_ty.analyze(symbol_table)?;
+                TyKind::Array(ArrayType {
+                    element_ty: Box::new(element_ty),
+                    size: array_type.size,
+                    position: array_type.position,
+                })
+            }
+            TyKind::Custom(identifier) => {
+                let struct_type = symbol_table.get_struct(identifier).unwrap();
+                TyKind::Struct(struct_type.ty.clone())
             }
             other => other.clone(),
-        }
+        })
     }
 
     pub fn size_of<'a>(
         &self,
         context: &'a Context,
+        symbol_table: &mut SymbolTable,
         position: Position,
     ) -> CompileResult<IntValue<'a>> {
-        Ok(match self.to_llvm_type(context).size_of() {
+        Ok(match self.to_llvm_type(context, symbol_table).size_of() {
             Some(size) => size,
             None => return Err(CompileError::unknown_size(position)),
         })
-    }
-}
-
-pub type IdentifierGeneric = Vec<Identifier>;
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Generic(pub Box<Ty>, pub Vec<Ty>);
-
-impl Generic {
-    pub fn new(ty: Ty, generic_types: Vec<Ty>) -> Self {
-        Generic(Box::new(ty), generic_types)
-    }
-}
-
-impl fmt::Display for Generic {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        let generic_types = self
-            .1
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<String>>()
-            .join(", ");
-        write!(f, "{}<{generic_types}>", self.0)
     }
 }
 
@@ -132,8 +135,19 @@ impl Ty {
         Self { kind: ty, position }
     }
 
-    pub fn size_of<'a>(&self, context: &'a Context) -> CompileResult<IntValue<'a>> {
-        self.kind.size_of(context, self.position)
+    pub fn analyze(&self, symbol_table: &mut SymbolTable) -> CompileResult<Ty> {
+        Ok(Self {
+            kind: self.kind.analyze(symbol_table)?,
+            position: self.position,
+        })
+    }
+
+    pub fn size_of<'a>(
+        &self,
+        context: &'a Context,
+        symbol_table: &mut SymbolTable,
+    ) -> CompileResult<IntValue<'a>> {
+        self.kind.size_of(context, symbol_table, self.position)
     }
 }
 
@@ -177,7 +191,6 @@ impl PartialEq for ArrayType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct FunctionType {
-    pub generics: Option<IdentifierGeneric>,
     pub parameters: Vec<Ty>,
     pub ret: Box<Ty>,
     pub position: Position,
@@ -192,26 +205,14 @@ impl fmt::Display for FunctionType {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let generics = match &self.generics {
-            Some(generics) => {
-                let generics = generics
-                    .iter()
-                    .map(|generic| generic.value.clone())
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                format!("<{generics}>")
-            }
-            None => String::new(),
-        };
-        write!(f, "fn{generics}({parameters}) -> {}", self.ret)
+        write!(f, "fn({parameters}) -> {}", self.ret)
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct StructType {
-    pub identifier: Identifier,
-    pub generics: Option<IdentifierGeneric>,
-    pub fields: Vec<StructField>,
+    pub identifier: String,
+    pub fields: HashMap<String, (usize, Ty)>,
     pub position: Position,
 }
 
@@ -220,39 +221,28 @@ impl fmt::Display for StructType {
         let fields = self
             .fields
             .iter()
-            .map(ToString::to_string)
+            .map(|(identifier, ty)| format!("{identifier}: {}", ty.1))
             .collect::<Vec<_>>()
             .join(", ");
 
-        let generics = match &self.generics {
-            Some(generics) => {
-                let generics = generics
-                    .iter()
-                    .map(|generic| generic.value.clone())
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                format!("<{generics}>")
-            }
-            None => String::new(),
-        };
-        write!(
-            f,
-            "struct {}{generics} {{ {fields} }}",
-            self.identifier.value
-        )
+        write!(f, "struct {} {{ {fields} }}", self.identifier)
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct StructField {
-    pub identifier: Identifier,
-    pub ty: Ty,
-    pub position: Position,
-}
+impl PartialEq for StructType {
+    fn eq(&self, other: &Self) -> bool {
+        let field_self = self
+            .fields
+            .iter()
+            .map(|(identifier, ty)| (identifier, &ty.1))
+            .collect::<HashMap<_, _>>();
+        let field_other = other
+            .fields
+            .iter()
+            .map(|(identifier, ty)| (identifier, &ty.1))
+            .collect::<HashMap<_, _>>();
 
-impl fmt::Display for StructField {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}: {}", self.identifier.value, self.ty)
+        self.identifier == other.identifier && field_self == field_other
     }
 }
 
