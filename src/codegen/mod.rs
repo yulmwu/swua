@@ -3,10 +3,12 @@ pub mod infer;
 pub mod symbol_table;
 pub mod types;
 
+use std::collections::HashMap;
+
 use self::{
     error::{CompileError, CompileResult},
     infer::{infer_expression, infer_literal},
-    symbol_table::{FunctionEntry, SymbolTable, VariableEntry},
+    symbol_table::{FunctionEntry, StructEntry, SymbolTable, VariableEntry},
     types::Value,
 };
 use crate::{ast::*, parser::Parser, tokenizer::Lexer};
@@ -89,7 +91,7 @@ impl<'ctx> Compiler<'ctx> {
             Statement::ExternFunctionDeclaration(func) => {
                 self.compile_external_function_declaration(func)?
             }
-            Statement::StructStatement(stmt) => self.compile_struct_statement(stmt)?,
+            Statement::StructDeclaration(stmt) => self.compile_struct_declaration(stmt)?,
             Statement::ExpressionStatement(expr) => {
                 self.compile_expression(expr.expression)?;
             }
@@ -182,7 +184,6 @@ impl<'ctx> Compiler<'ctx> {
                 FunctionLiteral {
                     parameters,
                     body,
-                    generics,
                     ret,
                     position,
                 },
@@ -191,7 +192,13 @@ impl<'ctx> Compiler<'ctx> {
 
         let parameters_ty = parameters
             .iter()
-            .map(|param| param.ty.kind.to_llvm_type(self.context).into())
+            .map(|param| {
+                param
+                    .ty
+                    .kind
+                    .to_llvm_type(self.context, &mut self.symbol_table)
+                    .into()
+            })
             .collect::<Vec<_>>();
         let function_type = self
             .context
@@ -209,7 +216,6 @@ impl<'ctx> Compiler<'ctx> {
             FunctionEntry::new(
                 function_type,
                 FunctionType {
-                    generics,
                     parameters: parameters.iter().map(|param| param.ty.clone()).collect(),
                     ret: Box::new(ret),
                     position,
@@ -227,10 +233,18 @@ impl<'ctx> Compiler<'ctx> {
 
             self.builder.build_store(alloca, param);
 
-            self.symbol_table.variables().insert(
-                parameters[i].identifier.value.clone(),
-                VariableEntry::new(alloca, parameters[i].ty.kind.clone()),
+            let entry = VariableEntry::new(
+                alloca,
+                parameters[i]
+                    .ty
+                    .kind
+                    .analyze(&mut self.symbol_table)?
+                    .clone(),
             );
+
+            self.symbol_table
+                .variables()
+                .insert(parameters[i].identifier.value.clone(), entry);
         }
 
         for stmt in body.statements {
@@ -243,7 +257,7 @@ impl<'ctx> Compiler<'ctx> {
 
                     break;
                 }
-                Statement::StructStatement(stmt) => self.compile_struct_statement(stmt)?,
+                Statement::StructDeclaration(stmt) => self.compile_struct_declaration(stmt)?,
                 Statement::ExpressionStatement(expr) => {
                     self.compile_expression(expr.expression)?;
                 }
@@ -264,18 +278,25 @@ impl<'ctx> Compiler<'ctx> {
             identifier: Identifier { value: name, .. },
             parameters,
             ret,
-            generics,
             position,
         } = func;
 
-        let function_type = ret.kind.to_llvm_type(self.context).fn_type(
-            parameters
-                .iter()
-                .map(|param| param.kind.to_llvm_type(self.context).into())
-                .collect::<Vec<_>>()
-                .as_slice(),
-            false,
-        );
+        let function_type = ret
+            .kind
+            .to_llvm_type(self.context, &mut self.symbol_table)
+            .fn_type(
+                parameters
+                    .iter()
+                    .map(|param| {
+                        param
+                            .kind
+                            .to_llvm_type(self.context, &mut self.symbol_table)
+                            .into()
+                    })
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                false,
+            );
 
         self.module.add_function(name.as_str(), function_type, None);
 
@@ -284,7 +305,6 @@ impl<'ctx> Compiler<'ctx> {
             FunctionEntry::new(
                 function_type,
                 FunctionType {
-                    generics,
                     parameters,
                     ret: Box::new(ret),
                     position,
@@ -327,14 +347,33 @@ impl<'ctx> Compiler<'ctx> {
             ),
             Literal::Array(arr) => {
                 let mut values: Vec<BasicValueEnum> = Vec::new();
+                let mut ty: Option<TyKind> = None;
 
-                for val in arr.clone().elements {
-                    values.push(self.compile_expression(val)?.value);
+                for (expression, position) in arr.clone().elements {
+                    match ty {
+                        Some(ref ty) => {
+                            if ty.clone()
+                                != infer_expression(expression.clone(), &mut self.symbol_table)?
+                            {
+                                return Err(CompileError::array_elements_must_be_of_the_same_type(
+                                    position,
+                                ));
+                            }
+                        }
+                        None => {
+                            ty = Some(infer_expression(
+                                expression.clone(),
+                                &mut self.symbol_table,
+                            )?);
+                        }
+                    }
+
+                    values.push(self.compile_expression(expression)?.value);
                 }
 
                 let ty = infer_literal(Literal::Array(arr), &mut self.symbol_table)?;
                 let array_ty = ty
-                    .to_llvm_type(self.context)
+                    .to_llvm_type(self.context, &mut self.symbol_table)
                     .array_type(values.len() as u32);
                 let ptr = self.builder.build_alloca(array_ty, "array");
 
@@ -346,7 +385,7 @@ impl<'ctx> Compiler<'ctx> {
                             self.context.i64_type(),
                             ptr,
                             &[index],
-                            format!("ptr.{}", i).as_str(),
+                            format!("ptr.array.{i}").as_str(),
                         )
                     };
 
@@ -357,20 +396,44 @@ impl<'ctx> Compiler<'ctx> {
             }
             Literal::Struct(struct_lit) => {
                 let name = struct_lit.identifier.value;
-                let struct_ty = match self.module.get_struct_type(name.as_str()) {
-                    Some(ty) => ty,
-                    None => return Err(CompileError::struct_not_found(name, struct_lit.position)),
+                let struct_ty = match self.symbol_table.get_struct(&name) {
+                    Some(struct_type) => struct_type.clone(),
+                    None => {
+                        return Err(CompileError::struct_not_found(
+                            name,
+                            struct_lit.identifier.position,
+                        ))
+                    }
                 };
 
                 let mut values: Vec<BasicValueEnum> = Vec::new();
 
+                if struct_lit.fields.len() != struct_ty.ty.fields.len() {
+                    return Err(CompileError::wrong_number_of_fields(
+                        struct_ty.ty.fields.len(),
+                        struct_lit.fields.len(),
+                        struct_lit.identifier.position,
+                    ));
+                }
+
                 for val in struct_lit.fields {
-                    values.push(self.compile_expression(val.1)?.value);
+                    let value = self.compile_expression(val.1 .0)?;
+                    let field_ty = struct_ty.ty.fields.get(&val.0).unwrap();
+
+                    if value.ty != field_ty.1.kind {
+                        return Err(CompileError::type_mismatch(
+                            field_ty.1.kind.clone(),
+                            value.ty,
+                            val.1 .1,
+                        ));
+                    }
+
+                    values.push(value.value);
                 }
 
                 let ptr = self
                     .builder
-                    .build_alloca(struct_ty, "struct")
+                    .build_alloca(struct_ty.struct_type, format!("struct.{name}").as_str())
                     .as_basic_value_enum()
                     .into_pointer_value();
 
@@ -382,7 +445,7 @@ impl<'ctx> Compiler<'ctx> {
                             self.context.i64_type(),
                             ptr,
                             &[index],
-                            "ptr",
+                            format!("ptr.struct.{name}.{i}").as_str(),
                         )
                     };
 
@@ -398,10 +461,14 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_identifier_expression(&mut self, ident: Identifier) -> CompileResult<Value<'ctx>> {
         let name = ident.value;
 
-        Ok(match self.symbol_table.get_variable(&name) {
+        Ok(match self.symbol_table.clone().get_variable(&name) {
             Some(VariableEntry { pointer, ty }) => Value::new(
                 self.builder
-                    .build_load(ty.to_llvm_type(self.context), *pointer, name.as_str())
+                    .build_load(
+                        ty.to_llvm_type(self.context, &mut self.symbol_table),
+                        *pointer,
+                        name.as_str(),
+                    )
                     .as_basic_value_enum(),
                 ty.clone(),
             ),
@@ -514,14 +581,22 @@ impl<'ctx> Compiler<'ctx> {
             }
         };
 
+        if ty.parameters.len() != arguments.len() {
+            return Err(CompileError::wrong_number_of_arguments(
+                ty.parameters.len(),
+                arguments.len(),
+                position,
+            ));
+        }
+
         let mut args: Vec<BasicMetadataValueEnum> = Vec::new();
 
         for arg in arguments {
-            let value = self.compile_expression(arg.clone())?;
+            let value = self.compile_expression(arg.0.clone())?;
+            let parameter = ty.parameters[args.len()].clone();
 
-            let arg_ty = infer_expression(arg, &mut self.symbol_table)?;
-            if arg_ty != value.ty {
-                return Err(CompileError::type_mismatch(value.ty, arg_ty, position));
+            if value.ty != parameter.kind {
+                return Err(CompileError::type_mismatch(parameter.kind, value.ty, arg.1));
             }
 
             args.push(value.value.into());
@@ -589,7 +664,7 @@ impl<'ctx> Compiler<'ctx> {
                     self.symbol_table = original_symbol_table;
                     return Ok(result);
                 }
-                Statement::StructStatement(stmt) => self.compile_struct_statement(stmt)?,
+                Statement::StructDeclaration(stmt) => self.compile_struct_declaration(stmt)?,
                 Statement::ExpressionStatement(expr) => {
                     self.compile_expression(expr.expression)?;
                 }
@@ -885,7 +960,9 @@ impl<'ctx> Compiler<'ctx> {
 
         let size = match value.ty {
             TyKind::Array(array_type) => {
-                let element_size = array_type.element_ty.size_of(self.context)?;
+                let element_size = array_type
+                    .element_ty
+                    .size_of(self.context, &mut self.symbol_table)?;
                 let length = match array_type.size {
                     Some(length) => length,
                     _ => return Err(CompileError::unknown_size(expr.position)),
@@ -895,7 +972,7 @@ impl<'ctx> Compiler<'ctx> {
                 self.builder
                     .build_int_mul(element_size, length, "sizeof_array")
             }
-            ty => ty.size_of(self.context, expr.position)?,
+            ty => ty.size_of(self.context, &mut self.symbol_table, expr.position)?,
         };
 
         Ok(Value::new(size.as_basic_value_enum(), TyKind::Int))
@@ -906,7 +983,9 @@ impl<'ctx> Compiler<'ctx> {
         expr: SizeofTypeExpression,
     ) -> CompileResult<Value<'ctx>> {
         Ok(Value::new(
-            expr.ty.size_of(self.context)?.as_basic_value_enum(),
+            expr.ty
+                .size_of(self.context, &mut self.symbol_table)?
+                .as_basic_value_enum(),
             TyKind::Int,
         ))
     }
@@ -926,48 +1005,124 @@ impl<'ctx> Compiler<'ctx> {
         index: IndexExpression,
         left: Value<'ctx>,
     ) -> CompileResult<Value<'ctx>> {
-        let compiled_index = self.compile_expression(*index.index)?;
+        let value = self.compile_expression(*index.index)?;
 
-        Ok(match compiled_index.ty {
+        Ok(match value.ty {
             TyKind::Int => {
                 let element_ty = match left.ty {
                     TyKind::Array(array_type) => array_type.element_ty.kind,
                     _ => unreachable!(),
                 };
-                let element_ll_ty = element_ty.to_llvm_type(self.context);
+                let element_ll_ty = element_ty.to_llvm_type(self.context, &mut self.symbol_table);
 
                 let ptr = unsafe {
                     self.builder.build_gep(
                         element_ll_ty,
                         left.value.into_pointer_value(),
-                        &[compiled_index.value.into_int_value()],
-                        "ptr",
+                        &[value.value.into_int_value()],
+                        "ptr_array_index",
                     )
                 };
 
                 Value::new(
-                    self.builder.build_load(element_ll_ty, ptr, "load"),
+                    self.builder
+                        .build_load(element_ll_ty, ptr, "load_array_index"),
                     element_ty,
                 )
             }
-            _ => {
-                return Err(CompileError::unknown_type(
-                    compiled_index.ty,
-                    index.position,
-                ))
-            }
+            _ => return Err(CompileError::unknown_type(value.ty, index.position)),
         })
     }
 
     fn compile_struct_index_expression(
         &mut self,
         _index: IndexExpression,
-        _left: Value<'ctx>,
+        left: Value<'ctx>,
     ) -> CompileResult<Value<'ctx>> {
-        todo!()
+        // TODO: Fix this
+        let index = match *_index.index {
+            Expression::Literal(Literal::String(s)) => s.value,
+            _ => return Err(CompileError::expected("String", _index.position)),
+        };
+
+        Ok(match left.ty {
+            TyKind::Struct(struct_type) => {
+                let symbol_table = self.symbol_table.clone();
+                let entry = match symbol_table.get_struct(&struct_type.identifier) {
+                    Some(entry) => entry,
+                    None => {
+                        return Err(CompileError::struct_not_found(
+                            struct_type.identifier,
+                            _index.position,
+                        ))
+                    }
+                };
+                let field = entry.ty.fields.get(&index).unwrap();
+                let element_ll_ty = field
+                    .1
+                    .kind
+                    .to_llvm_type(self.context, &mut self.symbol_table);
+
+                println!("{:?}", left.value);
+
+                let ptr = unsafe {
+                    self.builder.build_gep(
+                        element_ll_ty,
+                        left.value.into_pointer_value(),
+                        &[self.context.i64_type().const_int(field.0 as u64, false)],
+                        format!("ptr.struct.{}.{index}", entry.ty.identifier).as_str(),
+                    )
+                };
+
+                Value::new(
+                    self.builder.build_load(
+                        element_ll_ty,
+                        ptr,
+                        format!("load.struct.{}.{}", entry.ty.identifier, index).as_str(),
+                    ),
+                    field.1.kind.clone(),
+                )
+            }
+            _ => return Err(CompileError::unknown_type(left.ty, _index.position)),
+        })
     }
 
-    fn compile_struct_statement(&mut self, _stmt: StructStatement) -> CompileResult<()> {
-        todo!()
+    fn compile_struct_declaration(&mut self, stmt: StructDeclaration) -> CompileResult<()> {
+        let StructDeclaration {
+            identifier: Identifier { value: name, .. },
+            fields,
+            ..
+        } = stmt;
+
+        let mut fields_ty = HashMap::new();
+        let mut fields_ll_ty = Vec::new();
+
+        let mut reversed = fields.iter().collect::<Vec<_>>();
+        reversed.reverse();
+        for (index, field) in reversed.into_iter().enumerate() {
+            let field_ty = field.1.kind.analyze(&mut self.symbol_table)?.clone();
+            fields_ty.insert(
+                field.0.clone(),
+                (index, Ty::new(field_ty.clone(), field.1.position)),
+            );
+            fields_ll_ty.push(field_ty.to_llvm_type(self.context, &mut self.symbol_table));
+        }
+
+        let struct_ty = self.context.opaque_struct_type(name.as_str());
+        struct_ty.set_body(fields_ll_ty.as_slice(), false);
+
+        self.symbol_table.structs().insert(
+            name.clone(),
+            StructEntry::new(
+                struct_ty,
+                StructType {
+                    identifier: name.clone(),
+                    fields: fields_ty,
+                    position: stmt.position,
+                },
+            ),
+        );
+
+        Ok(())
     }
 }

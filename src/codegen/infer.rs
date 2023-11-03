@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::{
     error::{CompileError, CompileResult},
     symbol_table::{SymbolTable, VariableEntry},
@@ -9,7 +11,7 @@ use crate::ast::{
     },
     literal::{ArrayLiteral, FunctionLiteral, Literal, StructLiteral},
     statement::Statement,
-    ArrayType, FunctionType, StructField, StructType, Ty, TyKind,
+    ArrayType, FunctionType, StructType, Ty, TyKind,
 };
 
 pub fn infer_expression(
@@ -150,12 +152,11 @@ pub fn infer_expression(
                         ));
                     }
                     for (i, argument) in arguments.iter().enumerate() {
-                        if function_ty.parameters[i].kind
-                            != infer_expression(argument.clone(), symbol_table)?
-                        {
+                        let parameter_ty = function_ty.parameters[i].kind.clone();
+                        if parameter_ty != infer_expression(argument.0.clone(), symbol_table)? {
                             return Err(CompileError::type_mismatch(
-                                function_ty.parameters[i].kind.clone(),
-                                infer_expression(argument.clone(), symbol_table)?,
+                                parameter_ty,
+                                infer_expression(argument.0.clone(), symbol_table)?,
                                 function_ty.position,
                             ));
                         }
@@ -173,11 +174,22 @@ pub fn infer_expression(
         Expression::TypeofExpression(_)
         | Expression::SizeofExpression(_)
         | Expression::SizeofTypeExpression(_) => TyKind::Int,
-        Expression::IndexExpression(IndexExpression { left, position, .. }) => {
-            let array_ty = infer_expression(*left, symbol_table)?;
-            match array_ty {
+        Expression::IndexExpression(IndexExpression {
+            left,
+            index,
+            position,
+            ..
+        }) => {
+            let left = infer_expression(*left, symbol_table)?;
+            match left {
                 TyKind::Array(array_type) => array_type.element_ty.kind.clone(),
-                _ => return Err(CompileError::indexing_non_array_type(position)),
+                TyKind::Struct(struct_type) => match *index {
+                    Expression::Literal(Literal::String(ident)) => {
+                        struct_type.fields.get(&ident.value).unwrap().1.kind.clone()
+                    }
+                    _ => return Err(CompileError::expected("String", position)),
+                },
+                _ => return Err(CompileError::type_that_cannot_indexed(position)),
             }
         }
         Expression::Literal(literal) => infer_literal(literal, symbol_table)?,
@@ -193,10 +205,12 @@ pub fn infer_literal(literal: Literal, symbol_table: &mut SymbolTable) -> Compil
         Literal::Boolean(_) => TyKind::Boolean,
         Literal::Array(ArrayLiteral { elements, position }) => {
             let mut ty: Option<Ty> = None;
-            for element in elements.clone() {
+            for (element, position) in elements.clone() {
                 match ty {
                     Some(ref ty) => {
-                        if ty.kind != infer_expression(element, symbol_table)? {
+                        let infered_ty = infer_expression(element, symbol_table)?;
+                        if ty.kind != infered_ty {
+                            println!("{:#?} {:#? }", ty, infered_ty);
                             return Err(CompileError::array_elements_must_be_of_the_same_type(
                                 position,
                             ));
@@ -222,17 +236,21 @@ pub fn infer_literal(literal: Literal, symbol_table: &mut SymbolTable) -> Compil
             fields,
             position,
         }) => {
-            let mut fields_ty = Vec::new();
-            for (identifier, expression) in fields {
-                fields_ty.push(StructField {
-                    identifier,
-                    ty: Ty::new(infer_expression(expression, symbol_table)?, position),
-                    position: Default::default(),
-                });
+            let mut fields_ty = HashMap::new();
+            for (index, (identifier, expression)) in fields.iter().enumerate() {
+                fields_ty.insert(
+                    identifier.clone(),
+                    (
+                        index,
+                        Ty::new(
+                            infer_expression(expression.clone().0, symbol_table)?,
+                            expression.1,
+                        ),
+                    ),
+                );
             }
             TyKind::Struct(StructType {
-                identifier,
-                generics: None,
+                identifier: identifier.value,
                 fields: fields_ty,
                 position,
             })
@@ -251,17 +269,15 @@ pub fn infer_literal(literal: Literal, symbol_table: &mut SymbolTable) -> Compil
         },
         Literal::Function(FunctionLiteral {
             parameters,
-            body: _,
-            generics,
             ret,
             position,
+            ..
         }) => {
             let mut parameters_ty = Vec::new();
             for parameter in parameters {
                 parameters_ty.push(parameter.ty);
             }
             TyKind::Fn(FunctionType {
-                generics,
                 parameters: parameters_ty,
                 ret: Box::new(ret),
                 position,

@@ -1,4 +1,4 @@
-use crate::ast::{FunctionType, TyKind};
+use crate::ast::{FunctionType, StructType, TyKind};
 use inkwell::{types, values::PointerValue};
 use std::collections::HashMap;
 
@@ -6,6 +6,7 @@ use std::collections::HashMap;
 pub struct SymbolTableEntry<'a> {
     pub variables: HashMap<String, VariableEntry<'a>>,
     pub functions: HashMap<String, FunctionEntry<'a>>,
+    pub structs: HashMap<String, StructEntry<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +30,18 @@ pub struct FunctionEntry<'a> {
 impl<'a> FunctionEntry<'a> {
     pub fn new(function_type: types::FunctionType<'a>, ty: FunctionType) -> Self {
         Self { function_type, ty }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StructEntry<'a> {
+    pub struct_type: types::StructType<'a>,
+    pub ty: StructType,
+}
+
+impl<'a> StructEntry<'a> {
+    pub fn new(struct_type: types::StructType<'a>, ty: StructType) -> Self {
+        Self { struct_type, ty }
     }
 }
 
@@ -61,21 +74,8 @@ impl<'a> SymbolTable<'a> {
         &mut self.entry.functions
     }
 
-    pub fn insert_variable(&mut self, name: String, pointer: PointerValue<'a>, ty: TyKind) {
-        self.entry
-            .variables
-            .insert(name, VariableEntry::new(pointer, ty));
-    }
-
-    pub fn insert_function(
-        &mut self,
-        name: String,
-        llvm_function_type: types::FunctionType<'a>,
-        function_type: FunctionType,
-    ) {
-        self.entry
-            .functions
-            .insert(name, FunctionEntry::new(llvm_function_type, function_type));
+    pub fn structs(&mut self) -> &mut HashMap<String, StructEntry<'a>> {
+        &mut self.entry.structs
     }
 
     pub fn get_variable(&self, name: &str) -> Option<&VariableEntry<'a>> {
@@ -93,6 +93,16 @@ impl<'a> SymbolTable<'a> {
             Some(value) => Some(value),
             None => match &self.parent {
                 Some(parent) => parent.get_function(name),
+                None => None,
+            },
+        }
+    }
+
+    pub fn get_struct(&self, name: &str) -> Option<&StructEntry<'a>> {
+        match self.entry.structs.get(name) {
+            Some(value) => Some(value),
+            None => match &self.parent {
+                Some(parent) => parent.get_struct(name),
                 None => None,
             },
         }

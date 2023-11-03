@@ -42,8 +42,8 @@ impl CompileError {
         )
     }
 
-    pub fn indexing_non_array_type(position: Position) -> Self {
-        Self::new(CompileErrorKind::IndexingNonArrayType, position)
+    pub fn type_that_cannot_indexed(position: Position) -> Self {
+        Self::new(CompileErrorKind::TypeThatCannotBeIndexed, position)
     }
 
     pub fn array_elements_must_be_of_the_same_type(position: Position) -> Self {
@@ -123,6 +123,13 @@ impl CompileError {
         )
     }
 
+    pub fn wrong_number_of_fields(expected: usize, found: usize, position: Position) -> Self {
+        Self::new(
+            CompileErrorKind::WrongNumberOfFields(expected, found),
+            position,
+        )
+    }
+
     pub fn call_non_function_type<T>(ty: T, position: Position) -> Self
     where
         T: ToString,
@@ -131,6 +138,10 @@ impl CompileError {
             CompileErrorKind::CallNonFunctionType(ty.to_string()),
             position,
         )
+    }
+
+    pub fn index_out_of_range(position: Position) -> Self {
+        Self::new(CompileErrorKind::IndexOutOfRange, position)
     }
 }
 
@@ -147,7 +158,7 @@ pub enum CompileErrorKind {
     Expected(String),
     Unexpected(String),
     TypeMismatch(String, String),
-    IndexingNonArrayType,
+    TypeThatCannotBeIndexed,
     ArrayElementsMustBeOfTheSameType,
     ArrayMustHaveAtLeastOneElement,
     IdentifierNotFound(String),
@@ -159,19 +170,21 @@ pub enum CompileErrorKind {
     UnknownSize,
     IfElseMustHaveTheSameType,
     WrongNumberOfArguments(usize, usize),
+    WrongNumberOfFields(usize, usize),
     CallNonFunctionType(String),
+    IndexOutOfRange,
 }
 
 impl fmt::Display for CompileErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ParsingError(kind) => write!(f, "{kind}"),
+            Self::ParsingError(kind) => write!(f, "{kind} (Parsing Error)"),
             Self::Expected(expected) => write!(f, "expected `{expected}`"),
             Self::Unexpected(unexpected) => write!(f, "unexpected `{unexpected}`"),
             Self::TypeMismatch(expected, found) => {
                 write!(f, "expected `{expected}`, but found `{found}`")
             }
-            Self::IndexingNonArrayType => write!(f, "indexing non-array type"),
+            Self::TypeThatCannotBeIndexed => write!(f, "type that cannot be indexed"),
             Self::ArrayElementsMustBeOfTheSameType => {
                 write!(f, "array elements must be of the same type")
             }
@@ -194,7 +207,12 @@ impl fmt::Display for CompileErrorKind {
                 f,
                 "wrong number of arguments: expected `{expected}`, found `{found}`"
             ),
+            Self::WrongNumberOfFields(expected, found) => write!(
+                f,
+                "wrong number of fields: expected `{expected}`, found `{found}`"
+            ),
             Self::CallNonFunctionType(ty) => write!(f, "call non-function type `{ty}`"),
+            Self::IndexOutOfRange => write!(f, "index out of range"),
         }
     }
 }
