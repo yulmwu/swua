@@ -1,0 +1,21 @@
+extern fn print(int) -> int;
+
+struct Foo { x: int, y: int, };
+struct Bar { a: Foo, b: Foo, };
+
+fn add(a: int, b: int) -> int {
+    return a + b;
+}
+
+fn main() -> int {
+    let foo1: Foo = struct Foo { x: 2, y: 3 };
+    let foo2: Foo = struct Foo { x: 10, y: 20 };
+    let bar: Bar = struct Bar { a: foo1, b: foo2 };
+    let a: int = add(bar.a.x, bar.b.x); // 12
+    let b: int = add(bar.a.y, bar.b.y); // 23
+
+    print(a);
+    print(b);
+
+    return add(a, b);
+}
