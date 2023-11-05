@@ -1,14 +1,101 @@
-pub mod error;
-pub mod helpers;
-
-use std::collections::HashMap;
-
-use self::error::{ParseResult, ParsingError};
 use crate::{
-    ast::*,
-    ident_token_to_string,
+    codegen::*,
     tokenizer::{Lexer, Token, TokenKind},
+    AstArrayTypeKind, AstType, AstTypeKind, BinaryOperator, Position, Priority, Program,
+    UnaryOperator,
 };
+use std::{collections::BTreeMap, fmt};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsingError {
+    pub kind: ParsingErrorKind,
+    pub position: Position,
+}
+
+impl ParsingError {
+    pub fn new(kind: ParsingErrorKind, position: Position) -> Self {
+        Self { kind, position }
+    }
+
+    pub fn expected_next_token<T>(expected: T, got: T, position: Position) -> Self
+    where
+        T: ToString,
+    {
+        Self::new(
+            ParsingErrorKind::ExpectedNextToken(expected.to_string(), got.to_string()),
+            position,
+        )
+    }
+
+    pub fn expected_ty<T>(expected: T, position: Position) -> Self
+    where
+        T: ToString,
+    {
+        Self::new(ParsingErrorKind::ExpectedTy(expected.to_string()), position)
+    }
+
+    pub fn expected_expression<T>(expected: T, position: Position) -> Self
+    where
+        T: ToString,
+    {
+        Self::new(
+            ParsingErrorKind::ExpectedExpression(expected.to_string()),
+            position,
+        )
+    }
+
+    pub fn unexpected_token<T>(token: T, position: Position) -> Self
+    where
+        T: ToString,
+    {
+        Self::new(
+            ParsingErrorKind::UnexpectedToken(token.to_string()),
+            position,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[rustfmt::skip]
+pub enum ParsingErrorKind {
+    ExpectedNextToken(String, String),
+    ExpectedTy(String),
+    ExpectedExpression(String),
+    UnexpectedToken(String),
+}
+
+impl fmt::Display for ParsingErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParsingErrorKind::ExpectedNextToken(expected, got) => {
+                write!(f, "expected `{expected}` but got `{got}`")
+            }
+            ParsingErrorKind::ExpectedTy(expected) => write!(f, "expected type `{expected}`"),
+            ParsingErrorKind::ExpectedExpression(expected) => {
+                write!(f, "expected expression `{expected}`")
+            }
+            ParsingErrorKind::UnexpectedToken(token) => write!(f, "unexpected token `{token}`"),
+        }
+    }
+}
+
+pub type ParseResult<T> = Result<T, ParsingError>;
+
+#[macro_export]
+macro_rules! ident_token_to_string {
+    ($self:ident) => {
+        match $self.current_token.kind {
+            $crate::tokenizer::TokenKind::IDENT(ref ident) => ident.to_string(),
+            _ => {
+                return Err(ParsingError::expected_next_token(
+                    "Identifier".to_string(),
+                    $self.current_token.kind.to_string(),
+                    $self.current_token.position,
+                ))
+            }
+        }
+    };
+}
 
 #[derive(Debug, Default)]
 pub struct Parser<'a> {
@@ -37,7 +124,10 @@ impl<'a> Parser<'a> {
         self.current_token = self.peek_token.clone();
         self.peek_token = self.lexer.next_token();
 
-        self.position = Position(self.current_token.position.0, self.current_token.position.1);
+        self.position = Position::new(
+            self.current_token.position.line,
+            self.current_token.position.column,
+        );
     }
 
     fn expect_token(&mut self, token_type: &TokenKind) -> ParseResult<()> {
@@ -88,7 +178,7 @@ impl<'a> Parser<'a> {
 
         while self.current_token.kind != TokenKind::EOF {
             match self.parse_statement() {
-                Ok(statement) => program.push(statement),
+                Ok(statement) => program.statements.push(statement),
                 Err(error) => self.errors.push(error),
             }
 
@@ -104,27 +194,26 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(&mut self) -> ParseResult<Statement> {
         Ok(match self.current_token.kind {
-            TokenKind::Let => Statement::LetStatement(self.parse_let_statement(false)?),
-            TokenKind::Mut => Statement::LetStatement(self.parse_let_statement(true)?),
+            TokenKind::Let => Statement::LetStatement(self.parse_let_statement()?),
             TokenKind::Function => {
-                Statement::FunctionDeclaration(self.parse_function_declaration()?)
+                Statement::FunctionDefinition(self.parse_function_declaration()?)
             }
             TokenKind::Extern => {
-                Statement::ExternFunctionDeclaration(self.parse_extern_function_declaration()?)
+                Statement::ExternalFunctionDeclaration(self.parse_external_function_declaration()?)
             }
-            TokenKind::Return => Statement::ReturnStatement(self.parse_return_statement()?),
-            TokenKind::Type => Statement::TypeStatement(self.parse_type_statement()?),
-            TokenKind::Declare => Statement::DeclareStatement(self.parse_declare_statement()?),
+            TokenKind::Return => Statement::Return(self.parse_return_statement()?),
+            TokenKind::Type => Statement::TypeDeclaration(self.parse_type_statement()?),
+            TokenKind::Declare => Statement::Declaration(self.parse_declare_statement()?),
             TokenKind::Struct => Statement::StructDeclaration(self.parse_struct_declaration()?),
             _ => self.parse_expression_statement()?,
         })
     }
 
-    fn parse_let_statement(&mut self, is_mutable: bool) -> ParseResult<LetStatement> {
+    fn parse_let_statement(&mut self) -> ParseResult<LetStatement> {
         self.next_token();
 
         let ident = Identifier {
-            value: ident_token_to_string! { self },
+            identifier: ident_token_to_string! { self },
             position: self.position,
         };
         self.next_token();
@@ -142,29 +231,92 @@ impl<'a> Parser<'a> {
         self.next_token();
 
         Ok(LetStatement {
-            identifier: ident,
+            name: ident,
             ty,
-            value: Some(expression),
-            is_mutable,
+            value: expression,
             position: self.position,
         })
     }
 
-    fn parse_function_declaration(&mut self) -> ParseResult<FunctionDeclaration> {
+    fn parse_function_declaration(&mut self) -> ParseResult<FunctionDefinition> {
         self.next_token();
 
         let ident = ident_token_to_string! { self };
 
-        Ok(FunctionDeclaration {
-            identifier: Identifier {
-                value: ident,
+        self.next_token();
+        self.expect_token(&TokenKind::LParen)?;
+
+        let mut parameters = Vec::new();
+
+        while self.current_token.kind != TokenKind::RParen {
+            if let TokenKind::IDENT(identifier) = self.current_token.kind.clone() {
+                self.next_token();
+                self.expect_token(&TokenKind::Colon)?;
+
+                let ty = self.parse_ty()?;
+
+                parameters.push(Parameter {
+                    name: Identifier {
+                        identifier: identifier.to_string(),
+                        position: self.position,
+                    },
+                    ty,
+                    position: self.position,
+                });
+            } else {
+                return Err(ParsingError::unexpected_token(
+                    self.current_token.kind.to_string(),
+                    self.position,
+                ));
+            }
+
+            if self.current_token.kind == TokenKind::RParen {
+                break;
+            }
+
+            self.expect_token(&TokenKind::Comma)?;
+        }
+
+        self.expect_token(&TokenKind::RParen)?;
+        self.expect_token(&TokenKind::Arrow)?;
+
+        let return_type = self.parse_ty()?;
+
+        let body = match self.current_token.kind {
+            TokenKind::LBrace => self.parse_block_expression()?,
+            TokenKind::DoubleArrow => {
+                self.next_token();
+
+                BlockExpression {
+                    statements: vec![Statement::Return(ReturnStatement {
+                        value: self.parse_expression(&Priority::Lowest)?,
+                        position: self.position,
+                    })],
+                    position: self.position,
+                }
+            }
+            _ => {
+                return Err(ParsingError::expected_next_token(
+                    TokenKind::LBrace.to_string(),
+                    self.current_token.kind.to_string(),
+                    self.position,
+                ))
+            }
+        };
+
+        Ok(FunctionDefinition {
+            name: Identifier {
+                identifier: ident,
                 position: self.position,
             },
-            function: self.parse_function_literal()?,
+            parameters,
+            return_type,
+            body,
+            position: self.position,
         })
     }
 
-    fn parse_extern_function_declaration(&mut self) -> ParseResult<ExternFunctionDeclaration> {
+    fn parse_external_function_declaration(&mut self) -> ParseResult<ExternalFunctionDeclaration> {
         self.next_token();
 
         self.expect_token(&TokenKind::Function)?;
@@ -177,7 +329,10 @@ impl<'a> Parser<'a> {
         let mut parameters = Vec::new();
 
         while self.current_token.kind != TokenKind::RParen {
-            parameters.push(self.parse_ty()?);
+            parameters.push(ExternalFunctionParameter {
+                ty: self.parse_ty()?,
+                position: self.position,
+            });
 
             if self.current_token.kind == TokenKind::RParen {
                 break;
@@ -189,7 +344,7 @@ impl<'a> Parser<'a> {
         self.expect_token(&TokenKind::RParen)?;
         self.expect_token(&TokenKind::Arrow)?;
 
-        let ret = self.parse_ty()?;
+        let return_type = self.parse_ty()?;
 
         if self.current_token.kind != TokenKind::Semicolon {
             return Err(ParsingError::expected_next_token(
@@ -199,13 +354,13 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        Ok(ExternFunctionDeclaration {
-            identifier: Identifier {
-                value: ident,
+        Ok(ExternalFunctionDeclaration {
+            name: Identifier {
+                identifier: ident,
                 position: self.position,
             },
             parameters,
-            ret,
+            return_type,
             position: self.position,
         })
     }
@@ -236,7 +391,7 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_type_statement(&mut self) -> ParseResult<TypeStatement> {
+    fn parse_type_statement(&mut self) -> ParseResult<TypeDeclaration> {
         self.next_token();
 
         let ident = ident_token_to_string! { self };
@@ -254,9 +409,9 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        Ok(TypeStatement {
-            identifier: Identifier {
-                value: ident,
+        Ok(TypeDeclaration {
+            name: Identifier {
+                identifier: ident,
                 position: self.position,
             },
             ty,
@@ -264,7 +419,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_declare_statement(&mut self) -> ParseResult<DeclareStatement> {
+    fn parse_declare_statement(&mut self) -> ParseResult<Declaration> {
         self.next_token();
 
         let ident = ident_token_to_string! { self };
@@ -282,9 +437,9 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        Ok(DeclareStatement {
-            identifier: Identifier {
-                value: ident,
+        Ok(Declaration {
+            name: Identifier {
+                identifier: ident,
                 position: self.position,
             },
             ty,
@@ -300,20 +455,22 @@ impl<'a> Parser<'a> {
 
         self.expect_token(&TokenKind::LBrace)?;
 
-        let mut fields = HashMap::new();
+        let mut fields = BTreeMap::new();
 
         while self.current_token.kind != TokenKind::RBrace {
-            let key = Identifier {
-                value: ident_token_to_string! { self },
-                position: self.position,
-            };
+            let key = ident_token_to_string! { self };
             self.next_token();
 
             self.expect_token(&TokenKind::Colon)?;
 
-            let value = self.parse_ty()?;
-
-            fields.insert(key.value.clone(), value);
+            let ty = self.parse_ty()?;
+            fields.insert(
+                key.clone(),
+                FieldTy {
+                    ty,
+                    position: self.position,
+                },
+            );
 
             if self.current_token.kind == TokenKind::RBrace {
                 break;
@@ -325,8 +482,8 @@ impl<'a> Parser<'a> {
         self.expect_token(&TokenKind::RBrace)?;
 
         Ok(StructDeclaration {
-            identifier: Identifier {
-                value: ident,
+            name: Identifier {
+                identifier: ident,
                 position: self.position,
             },
             fields,
@@ -338,17 +495,14 @@ impl<'a> Parser<'a> {
         let expression = self.parse_expression(&Priority::Lowest)?;
         self.next_token();
 
-        Ok(Statement::ExpressionStatement(ExpressionStatement {
-            expression,
-            position: self.position,
-        }))
+        Ok(Statement::Expression(expression))
     }
 
     fn parse_expression(&mut self, priority: &Priority) -> ParseResult<Expression> {
         let left_expression = match self.current_token.kind.clone() {
             TokenKind::IDENT(value) => {
                 Some(Ok(Expression::Literal(Literal::Identifier(Identifier {
-                    value: value.to_string(),
+                    identifier: value.to_string(),
                     position: self.position,
                 }))))
             }
@@ -375,12 +529,12 @@ impl<'a> Parser<'a> {
                 }))))
             }
             TokenKind::Bang | TokenKind::Minus => {
-                let operator: PrefixOperator = self.current_token.kind.clone().into();
+                let operator: UnaryOperator = self.current_token.kind.clone().into();
                 self.next_token();
 
-                Some(Ok(Expression::PrefixExpression(PrefixExpression {
+                Some(Ok(Expression::Unary(UnaryExpression {
                     operator,
-                    right: Box::new(self.parse_expression(&Priority::Prefix)?),
+                    expression: Box::new(self.parse_expression(&Priority::Prefix)?),
                     position: self.position,
                 })))
             }
@@ -400,23 +554,18 @@ impl<'a> Parser<'a> {
 
                 Some(expression)
             }
-            TokenKind::LBrace => Some(Ok(Expression::BlockExpression(
-                self.parse_block_expression()?,
-            ))),
+            TokenKind::LBrace => Some(Ok(Expression::Block(self.parse_block_expression()?))),
             TokenKind::LBracket => Some(Ok(Expression::Literal(Literal::Array(
                 self.parse_array_literal()?,
-            )))),
-            TokenKind::Function => Some(Ok(Expression::Literal(Literal::Function(
-                self.parse_function_literal()?,
             )))),
             TokenKind::Struct => Some(Ok(Expression::Literal(Literal::Struct(
                 self.parse_struct_literal()?,
             )))),
-            TokenKind::If => Some(Ok(Expression::IfExpression(self.parse_if_expression()?))),
+            TokenKind::If => Some(Ok(Expression::If(self.parse_if_expression()?))),
             TokenKind::Typeof => {
                 self.next_token();
 
-                Some(Ok(Expression::TypeofExpression(TypeofExpression {
+                Some(Ok(Expression::Typeof(TypeofExpression {
                     expression: Box::new(self.parse_expression(&Priority::Lowest)?),
                     position: self.position,
                 })))
@@ -424,26 +573,10 @@ impl<'a> Parser<'a> {
             TokenKind::Sizeof => {
                 self.next_token();
 
-                Some(Ok(Expression::SizeofExpression(SizeofExpression {
+                Some(Ok(Expression::Sizeof(SizeofExpression {
                     expression: Box::new(self.parse_expression(&Priority::Lowest)?),
                     position: self.position,
                 })))
-            }
-            TokenKind::SizeofType => {
-                self.next_token();
-
-                Some(Ok(Expression::SizeofTypeExpression(SizeofTypeExpression {
-                    ty: Box::new(self.parse_ty_without_next()?),
-                    position: self.position,
-                })))
-            }
-            TokenKind::Debug => {
-                self.next_token();
-
-                Some(Ok(Expression::Debug(
-                    Box::new(self.parse_expression(&Priority::Lowest)?),
-                    self.position,
-                )))
             }
             _ => None,
         };
@@ -461,14 +594,14 @@ impl<'a> Parser<'a> {
 
         if self.peek_token(&TokenKind::Assign) {
             let identifier = Identifier {
-                value: ident_token_to_string! { self },
+                identifier: ident_token_to_string! { self },
                 position: self.position,
             };
             self.next_token();
             self.next_token();
 
             let expression = self.parse_expression(&Priority::Lowest)?;
-            return Ok(Expression::AssignmentExpression(AssignmentExpression {
+            return Ok(Expression::Assign(AssignExpression {
                 identifier,
                 value: Box::new(expression),
                 position: self.position,
@@ -491,13 +624,13 @@ impl<'a> Parser<'a> {
                 | TokenKind::GT
                 | TokenKind::LTE
                 | TokenKind::GTE => {
-                    let operator: InfixOperator = self.current_token.kind.clone().into();
+                    let operator: BinaryOperator = self.current_token.kind.clone().into();
 
                     let priority = self.current_priority();
                     self.next_token();
                     let right = Box::new(self.parse_expression(&priority)?);
 
-                    Ok(Expression::InfixExpression(InfixExpression {
+                    Ok(Expression::Binary(BinaryExpression {
                         left: Box::new(left_expression?),
                         operator,
                         right,
@@ -510,7 +643,10 @@ impl<'a> Parser<'a> {
                     let mut arguments = Vec::new();
 
                     if self.current_token.kind != TokenKind::RParen {
-                        arguments.push((self.parse_expression(&Priority::Lowest)?, self.position));
+                        arguments.push(Argument {
+                            value: self.parse_expression(&Priority::Lowest)?,
+                            position: self.position,
+                        });
                         self.next_token();
 
                         if self.current_token.kind == TokenKind::Comma {
@@ -518,8 +654,10 @@ impl<'a> Parser<'a> {
                         }
 
                         while self.current_token.kind != TokenKind::RParen {
-                            arguments
-                                .push((self.parse_expression(&Priority::Lowest)?, self.position));
+                            arguments.push(Argument {
+                                value: self.parse_expression(&Priority::Lowest)?,
+                                position: self.position,
+                            });
                             self.next_token();
 
                             if self.current_token.kind == TokenKind::RParen {
@@ -538,7 +676,7 @@ impl<'a> Parser<'a> {
                         }
                     }
 
-                    Ok(Expression::CallExpression(CallExpression {
+                    Ok(Expression::Call(CallExpression {
                         function: Box::new(left_expression?),
                         arguments,
                         position: self.position,
@@ -558,7 +696,7 @@ impl<'a> Parser<'a> {
                         ));
                     }
 
-                    Ok(Expression::IndexExpression(IndexExpression {
+                    Ok(Expression::Index(IndexExpression {
                         left: Box::new(left_expression?),
                         index: Box::new(index),
                         position: self.position,
@@ -604,7 +742,10 @@ impl<'a> Parser<'a> {
 
         while self.current_token.kind != TokenKind::RBrace {
             let element_position = self.position;
-            elements.push((self.parse_expression(&Priority::Lowest)?, element_position));
+            elements.push(Element {
+                value: self.parse_expression(&Priority::Lowest)?,
+                position: element_position,
+            });
             self.next_token();
 
             if self.current_token.kind == TokenKind::RBracket {
@@ -637,22 +778,19 @@ impl<'a> Parser<'a> {
         self.next_token();
         self.expect_token(&TokenKind::LBrace)?;
 
-        let mut fields = HashMap::new();
+        let mut fields = BTreeMap::new();
 
         while self.current_token.kind != TokenKind::RBrace {
-            let key = Identifier {
-                value: ident_token_to_string! { self },
-                position: self.position,
-            };
+            let key = ident_token_to_string! { self };
             self.next_token();
 
             self.expect_token(&TokenKind::Colon)?;
 
-            let value_position = self.position;
+            let position = self.position;
             let value = self.parse_expression(&Priority::Lowest)?;
             self.next_token();
 
-            fields.insert(key.value.clone(), (value, value_position));
+            fields.insert(key.clone(), Field { value, position });
 
             if self.current_token.kind == TokenKind::RBrace {
                 break;
@@ -670,81 +808,11 @@ impl<'a> Parser<'a> {
         }
 
         Ok(StructLiteral {
-            identifier: Identifier {
-                value: identifier,
+            name: Identifier {
+                identifier,
                 position: identifier_position,
             },
             fields,
-            position: self.position,
-        })
-    }
-
-    fn parse_function_literal(&mut self) -> ParseResult<FunctionLiteral> {
-        self.next_token();
-        self.expect_token(&TokenKind::LParen)?;
-
-        let mut parameters = Vec::new();
-
-        while self.current_token.kind != TokenKind::RParen {
-            if let TokenKind::IDENT(identifier) = self.current_token.kind.clone() {
-                self.next_token();
-                self.expect_token(&TokenKind::Colon)?;
-
-                let ty = self.parse_ty()?;
-
-                parameters.push(Parameter {
-                    identifier: Identifier {
-                        value: identifier.to_string(),
-                        position: self.position,
-                    },
-                    ty,
-                    position: self.position,
-                });
-            } else {
-                return Err(ParsingError::unexpected_token(
-                    self.current_token.kind.to_string(),
-                    self.position,
-                ));
-            }
-
-            if self.current_token.kind == TokenKind::RParen {
-                break;
-            }
-
-            self.expect_token(&TokenKind::Comma)?;
-        }
-
-        self.expect_token(&TokenKind::RParen)?;
-        self.expect_token(&TokenKind::Arrow)?;
-
-        let ret = self.parse_ty()?;
-
-        let body = match self.current_token.kind {
-            TokenKind::LBrace => self.parse_block_expression()?,
-            TokenKind::DoubleArrow => {
-                self.next_token();
-
-                BlockExpression {
-                    statements: vec![Statement::ReturnStatement(ReturnStatement {
-                        value: self.parse_expression(&Priority::Lowest)?,
-                        position: self.position,
-                    })],
-                    position: self.position,
-                }
-            }
-            _ => {
-                return Err(ParsingError::expected_next_token(
-                    TokenKind::LBrace.to_string(),
-                    self.current_token.kind.to_string(),
-                    self.position,
-                ))
-            }
-        };
-
-        Ok(FunctionLiteral {
-            parameters,
-            ret,
-            body,
             position: self.position,
         })
     }
@@ -770,13 +838,13 @@ impl<'a> Parser<'a> {
             self.next_token();
 
             if self.current_token.kind == TokenKind::If {
-                Some(Box::new(BlockExpression {
-                    statements: vec![Statement::ReturnStatement(ReturnStatement {
-                        value: Expression::IfExpression(self.parse_if_expression()?),
+                Some(BlockExpression {
+                    statements: vec![Statement::Return(ReturnStatement {
+                        value: Expression::If(self.parse_if_expression()?),
                         position: self.position,
                     })],
                     position: self.position,
-                }))
+                })
             } else {
                 if self.current_token.kind != TokenKind::LBrace {
                     return Err(ParsingError::expected_next_token(
@@ -786,7 +854,7 @@ impl<'a> Parser<'a> {
                     ));
                 }
 
-                Some(Box::new(self.parse_block_expression()?))
+                Some(self.parse_block_expression()?)
             }
         } else {
             None
@@ -794,35 +862,32 @@ impl<'a> Parser<'a> {
 
         Ok(IfExpression {
             condition: Box::new(condition),
-            consequence: Box::new(consequence),
+            consequence,
             alternative,
             position: self.position,
         })
     }
 
-    fn parse_ty(&mut self) -> ParseResult<Ty> {
+    fn parse_ty(&mut self) -> ParseResult<AstType> {
         let position = self.position;
 
         let result = self.parse_ty_kind();
         self.next_token();
 
-        result.map(|kind| Ty { kind, position })
+        result.map(|kind| AstType { kind, position })
     }
 
-    fn parse_ty_without_next(&mut self) -> ParseResult<Ty> {
-        let position = self.position;
-
-        self.parse_ty_kind().map(|kind| Ty { kind, position })
-    }
-
-    fn parse_ty_kind(&mut self) -> ParseResult<TyKind> {
-        let mut ty: Result<TyKind, ParsingError> = match self.current_token.kind {
-            TokenKind::IntType => Ok(TyKind::Int),
-            TokenKind::FloatType => Ok(TyKind::Float),
-            TokenKind::StringType => Ok(TyKind::String),
-            TokenKind::BooleanType => Ok(TyKind::Boolean),
-            TokenKind::Function => Ok(TyKind::Fn(self.parse_function_type()?)),
-            TokenKind::IDENT(ref ident) => Ok(TyKind::Custom(ident.to_string())),
+    fn parse_ty_kind(&mut self) -> ParseResult<AstTypeKind> {
+        let mut ty = match self.current_token.kind {
+            TokenKind::IntType => Ok(AstTypeKind::Int),
+            TokenKind::FloatType => Ok(AstTypeKind::Float),
+            TokenKind::StringType => Ok(AstTypeKind::String),
+            TokenKind::BooleanType => Ok(AstTypeKind::Boolean),
+            TokenKind::Function => todo!(),
+            TokenKind::IDENT(ref ident) => Ok(AstTypeKind::Named(Identifier {
+                identifier: ident.to_string(),
+                position: self.position,
+            })),
             _ => Err(ParsingError::unexpected_token(
                 self.current_token.kind.to_string(),
                 self.position,
@@ -861,8 +926,8 @@ impl<'a> Parser<'a> {
                 }
             }
 
-            ty = Ok(TyKind::Array(ArrayType {
-                element_ty: Box::new(Ty {
+            ty = Ok(AstTypeKind::Array(AstArrayTypeKind {
+                ty: Box::new(AstType {
                     kind: ty?,
                     position: self.position,
                 }),
@@ -872,36 +937,5 @@ impl<'a> Parser<'a> {
         }
 
         ty
-    }
-
-    fn parse_function_type(&mut self) -> ParseResult<FunctionType> {
-        self.next_token();
-        self.expect_token(&TokenKind::LParen)?;
-
-        let mut parameters = Vec::new();
-
-        while self.current_token.kind != TokenKind::RParen {
-            parameters.push(self.parse_ty()?);
-
-            if self.current_token.kind == TokenKind::RParen {
-                break;
-            }
-
-            self.expect_token(&TokenKind::Comma)?;
-        }
-
-        self.expect_token(&TokenKind::RParen)?;
-        self.expect_token(&TokenKind::Arrow)?;
-
-        let return_type = self.parse_ty_kind()?;
-
-        Ok(FunctionType {
-            parameters,
-            ret: Box::new(Ty {
-                kind: return_type,
-                position: self.position,
-            }),
-            position: self.position,
-        })
     }
 }
