@@ -1,7 +1,91 @@
-use crate::{
-    ast::Position,
-    tokenizer::{Token, TokenKind},
-};
+use crate::Position;
+use std::fmt;
+
+#[derive(Debug, PartialEq, Clone)]
+#[rustfmt::skip]
+pub enum TokenKind<'a> {
+    ILLEGAL(char), EOF, IDENT(&'a str),
+
+    Int(i64), Float(f64), String(&'a str), Boolean(bool), Comment,
+
+    Assign, Plus, Minus, Bang, Asterisk, Slash, Percent, Arrow, DoubleArrow,
+
+    Dot, Comma, Colon, DoubleColon, Semicolon,
+
+    LParen, RParen, LBrace, RBrace, LBracket, RBracket,
+
+    LT, GT, LTE, GTE, EQ, NEQ,
+
+    Let, Function, If, Else, Return, Type, Declare, Struct, Typeof, Sizeof,
+
+    IntType, FloatType, StringType, BooleanType,
+
+    Extern,
+}
+
+impl<'a> From<&'a str> for TokenKind<'a> {
+    fn from(s: &'a str) -> Self {
+        match s {
+            "let" => TokenKind::Let,
+            "fn" => TokenKind::Function,
+            "if" => TokenKind::If,
+            "else" => TokenKind::Else,
+            "return" => TokenKind::Return,
+            "type" => TokenKind::Type,
+            "declare" => TokenKind::Declare,
+            "struct" => TokenKind::Struct,
+            "typeof" => TokenKind::Typeof,
+            "sizeof" => TokenKind::Sizeof,
+            "true" => TokenKind::Boolean(true),
+            "false" => TokenKind::Boolean(false),
+            "int" => TokenKind::IntType,
+            "float" => TokenKind::FloatType,
+            "string" => TokenKind::StringType,
+            "boolean" => TokenKind::BooleanType,
+            "extern" => TokenKind::Extern,
+            s => TokenKind::IDENT(s),
+        }
+    }
+}
+
+impl fmt::Display for TokenKind<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        macro_rules! to_s {
+            ($( $x:ident )*) => {
+                match &self {
+                    $( TokenKind::$x(x) => x.to_string(), )*
+                    _ => format!("{:?}", self)
+                }
+            }
+        }
+
+        write!(f, "{}", to_s! { IDENT String Int Float Boolean })
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Token<'a> {
+    pub kind: TokenKind<'a>,
+    pub position: Position,
+}
+
+impl Default for Token<'_> {
+    fn default() -> Self {
+        Token::new(TokenKind::ILLEGAL('\0'), Position::new(0, 0))
+    }
+}
+
+impl std::fmt::Display for Token<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Token {:?} at {:?}", self.kind, self.position)
+    }
+}
+
+impl<'a> Token<'a> {
+    pub fn new(kind: TokenKind<'a>, position: Position) -> Self {
+        Token { kind, position }
+    }
+}
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Lexer<'a> {
@@ -16,7 +100,7 @@ impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         let mut lexer = Lexer {
             input,
-            current_position: Position(1, 0),
+            current_position: Position::new(1, 0),
             ..Default::default()
         };
 
@@ -34,7 +118,7 @@ impl<'a> Lexer<'a> {
         self.position = self.read_position;
         self.read_position += 1;
 
-        self.current_position.1 += 1;
+        self.current_position.column += 1;
     }
 
     fn peek_char(&self) -> char {
@@ -48,8 +132,8 @@ impl<'a> Lexer<'a> {
     fn skip_whitespace(&mut self) {
         while self.current_char.is_whitespace() {
             if self.current_char == '\n' {
-                self.current_position.0 += 1;
-                self.current_position.1 = 0;
+                self.current_position.line += 1;
+                self.current_position.column = 0;
             }
 
             self.read_char();
@@ -106,8 +190,8 @@ impl<'a> Lexer<'a> {
             while self.current_char != '\0' && (self.current_char != '*' || self.peek_char() != '/')
             {
                 if self.current_char == '\n' {
-                    self.current_position.0 += 1;
-                    self.current_position.1 = 0;
+                    self.current_position.line += 1;
+                    self.current_position.column = 0;
                 }
 
                 self.read_char();
@@ -127,7 +211,7 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> Token<'a> {
-        use super::token::TokenKind::*;
+        use TokenKind::*;
 
         self.skip_whitespace();
 
