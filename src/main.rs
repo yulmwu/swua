@@ -1,29 +1,41 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser as ClapParser, Subcommand};
 use colored::Colorize;
-use inkwell::{context::Context, OptimizationLevel};
+use inkwell::{context::Context, module::Module, OptimizationLevel};
 use std::{fs, path::PathBuf};
-use swua::codegen::{error::CompileError, Compiler};
+use swua::{
+    codegen::{CompileError, CompileResult},
+    parser::Parser,
+    tokenizer::Lexer,
+    SymbolTable,
+};
+
+fn compile<'a>(context: &'a Context, source_code: &str) -> CompileResult<Module<'a>> {
+    let program = Parser::new(Lexer::new(source_code))
+        .parse_program()
+        .map_err(|err| CompileError::from(err[0].clone()))?;
+    program.codegen(context, SymbolTable::default())
+}
 
 fn compile_error(err: CompileError, name: &str, filename: &str, file_content: String) {
     println!("{}:", "Compilation failed due to".red().bold());
 
     let lines: Vec<&str> = file_content.split('\n').collect();
-    let line = lines[err.position.0 - 1];
+    let line = lines[err.position.line - 1];
 
-    let spacing = err.position.0.to_string().len();
+    let spacing = err.position.line.to_string().len();
     println!("{}", format!(" {} |", " ".repeat(spacing)).blue());
-    println!("{}{line}", format!(" {} |", err.position.0).blue());
+    println!("{}{line}", format!(" {} |", err.position.line).blue());
     println!(
         "{}{}{}",
         format!(" {} |", " ".repeat(spacing)).blue(),
-        " ".repeat(err.position.1 - 1),
+        " ".repeat(err.position.column - 1),
         format!("^ Error: {}", err.kind).red().underline()
     );
 
     println!(" {} {filename}:{} ({name})", "--->".blue(), err.position);
 }
 
-#[derive(Parser, Debug)]
+#[derive(ClapParser, Debug)]
 #[clap(bin_name = "swua", version = "0.0.0", arg_required_else_help = true)]
 pub struct Cli {
     #[clap(subcommand)]
@@ -57,7 +69,7 @@ fn main() {
         SubCommand::Compile { input, output } => {
             let source_code = fs::read_to_string(input.clone()).unwrap();
             let context = Context::create();
-            let module = match Compiler::new(&context, NAME).compile(&source_code) {
+            let module = match compile(&context, &source_code) {
                 Ok(module) => module,
                 Err(err) => {
                     compile_error(err, NAME, input.to_str().unwrap(), source_code);
@@ -80,7 +92,7 @@ fn main() {
         SubCommand::Run { input } => {
             let source_code = fs::read_to_string(input.clone()).unwrap();
             let context = Context::create();
-            let module = match Compiler::new(&context, NAME).compile(&source_code) {
+            let module = match compile(&context, &source_code) {
                 Ok(module) => module,
                 Err(err) => {
                     compile_error(err, NAME, input.to_str().unwrap(), source_code);
