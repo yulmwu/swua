@@ -1,7 +1,7 @@
 use clap::{Parser as ClapParser, Subcommand};
 use colored::Colorize;
 use inkwell::{context::Context, module::Module, OptimizationLevel};
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, time::Instant};
 use swua::{
     codegen::{CompileError, CompileResult},
     parser::Parser,
@@ -60,7 +60,18 @@ pub enum SubCommand {
     },
 }
 
-const NAME: &str = "main"; // TODO
+// TODO
+const NAME: &str = "main";
+const OPTIMIZATION_LEVEL: OptimizationLevel = OptimizationLevel::None;
+
+fn display_optimization_level(level: OptimizationLevel) -> &'static str {
+    match level {
+        OptimizationLevel::None => "Unoptimized",
+        OptimizationLevel::Less => "Less optimized",
+        OptimizationLevel::Default => "Default optimized",
+        OptimizationLevel::Aggressive => "Aggressively optimized",
+    }
+}
 
 fn main() {
     let cli = Cli::parse();
@@ -90,6 +101,15 @@ fn main() {
             );
         }
         SubCommand::Run { input } => {
+            println!(
+                "{} {} [{}]",
+                "Compiling".green().bold(),
+                input.display(),
+                display_optimization_level(OPTIMIZATION_LEVEL)
+            );
+
+            let now = Instant::now();
+
             let source_code = fs::read_to_string(input.clone()).unwrap();
             let context = Context::create();
             let module = match compile(&context, &source_code) {
@@ -100,22 +120,39 @@ fn main() {
                 }
             };
 
+            println!(
+                "{} in {} ms",
+                "  Compile Finished".green().bold(),
+                now.elapsed().as_millis()
+            );
+            let now = Instant::now();
+
             if cli.llvm_ir {
                 eprintln!("{}", module.print_to_string().to_string());
             }
 
             let engine = module
-                .create_jit_execution_engine(OptimizationLevel::None)
+                .create_jit_execution_engine(OPTIMIZATION_LEVEL)
                 .unwrap();
 
             type JitMainFunction = unsafe extern "C" fn() -> i64;
 
-            unsafe {
+            let main_return = unsafe {
                 engine
                     .get_function::<JitMainFunction>("main")
                     .expect("Failed to find function main")
                     .call()
             };
+
+            println!(
+                "{} in {} ms, `main` function returned: {}",
+                "Run Finished".green().bold(),
+                now.elapsed().as_millis(),
+                match main_return {
+                    0 => "0".green().bold(),
+                    ret => ret.to_string().red().bold(),
+                }
+            );
         }
     }
 }

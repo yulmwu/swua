@@ -81,7 +81,6 @@ impl fmt::Display for ParsingErrorKind {
 
 pub type ParseResult<T> = Result<T, ParsingError>;
 
-#[macro_export]
 macro_rules! ident_token_to_string {
     ($self:ident) => {
         match $self.current_token.kind {
@@ -93,6 +92,18 @@ macro_rules! ident_token_to_string {
                     $self.current_token.position,
                 ))
             }
+        }
+    };
+}
+
+macro_rules! expect_semicolon_without_next_token {
+    ($self:ident) => {
+        if $self.current_token.kind != $crate::tokenizer::TokenKind::Semicolon {
+            return Err(ParsingError::expected_next_token(
+                $crate::tokenizer::TokenKind::Semicolon.to_string(),
+                $self.current_token.kind.to_string(),
+                $self.position,
+            ));
         }
     };
 }
@@ -147,18 +158,30 @@ impl<'a> Parser<'a> {
         self.peek_token.kind == *token_type
     }
 
+    /*
+        Lowest,
+    Equals,
+    LessGreater,
+    Sum,
+    Product,
+    Prefix,
+    Call,
+    Index,
+    MemberAccess,
+     */
     fn get_priority(&self, token_type: &TokenKind) -> Priority {
+        use Priority::*;
+        use TokenKind::*;
         match token_type {
-            TokenKind::Dot | TokenKind::Arrow => Priority::Dot,
-            TokenKind::Assign | TokenKind::EQ | TokenKind::NEQ => Priority::Equals,
-            TokenKind::Plus | TokenKind::Minus => Priority::Sum,
-            TokenKind::Slash | TokenKind::Asterisk => Priority::Product,
-            TokenKind::LT | TokenKind::GT | TokenKind::LTE | TokenKind::GTE => {
-                Priority::LessGreater
-            }
-            TokenKind::LParen => Priority::Call,
-            TokenKind::LBracket => Priority::Index,
-            _ => Priority::Lowest,
+            Assign | EQ | NEQ => Equals,
+            LT | GT | LTE | GTE => LessGreater,
+            Plus | Minus => Sum,
+            Slash | Asterisk => Product,
+            Typeof | Sizeof => Prefix,
+            LParen => Call,
+            LBracket => Index,
+            Dot => MemberAccess,
+            _ => Lowest,
         }
     }
 
@@ -195,9 +218,7 @@ impl<'a> Parser<'a> {
     fn parse_statement(&mut self) -> ParseResult<Statement> {
         Ok(match self.current_token.kind {
             TokenKind::Let => Statement::LetStatement(self.parse_let_statement()?),
-            TokenKind::Function => {
-                Statement::FunctionDefinition(self.parse_function_declaration()?)
-            }
+            TokenKind::Function => Statement::FunctionDefinition(self.parse_function_definition()?),
             TokenKind::Extern => {
                 Statement::ExternalFunctionDeclaration(self.parse_external_function_declaration()?)
             }
@@ -238,7 +259,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_function_declaration(&mut self) -> ParseResult<FunctionDefinition> {
+    fn parse_function_definition(&mut self) -> ParseResult<FunctionDefinition> {
         self.next_token();
 
         let ident = ident_token_to_string! { self };
@@ -250,6 +271,7 @@ impl<'a> Parser<'a> {
 
         while self.current_token.kind != TokenKind::RParen {
             if let TokenKind::IDENT(identifier) = self.current_token.kind.clone() {
+                let identifier_position = self.position;
                 self.next_token();
                 self.expect_token(&TokenKind::Colon)?;
 
@@ -258,7 +280,7 @@ impl<'a> Parser<'a> {
                 parameters.push(Parameter {
                     name: Identifier {
                         identifier: identifier.to_string(),
-                        position: self.position,
+                        position: identifier_position,
                     },
                     ty,
                     position: self.position,
@@ -287,13 +309,19 @@ impl<'a> Parser<'a> {
             TokenKind::DoubleArrow => {
                 self.next_token();
 
-                BlockExpression {
+                let block = BlockExpression {
                     statements: vec![Statement::Return(ReturnStatement {
                         value: self.parse_expression(&Priority::Lowest)?,
                         position: self.position,
                     })],
                     position: self.position,
-                }
+                };
+
+                self.next_token();
+
+                expect_semicolon_without_next_token! { self }
+
+                block
             }
             _ => {
                 return Err(ParsingError::expected_next_token(
@@ -346,13 +374,7 @@ impl<'a> Parser<'a> {
 
         let return_type = self.parse_ty()?;
 
-        if self.current_token.kind != TokenKind::Semicolon {
-            return Err(ParsingError::expected_next_token(
-                TokenKind::Semicolon.to_string(),
-                self.current_token.kind.to_string(),
-                self.position,
-            ));
-        }
+        expect_semicolon_without_next_token! { self }
 
         Ok(ExternalFunctionDeclaration {
             name: Identifier {
@@ -401,13 +423,7 @@ impl<'a> Parser<'a> {
 
         let ty = self.parse_ty()?;
 
-        if self.current_token.kind != TokenKind::Semicolon {
-            return Err(ParsingError::expected_next_token(
-                TokenKind::Semicolon.to_string(),
-                self.current_token.kind.to_string(),
-                self.position,
-            ));
-        }
+        expect_semicolon_without_next_token! { self }
 
         Ok(TypeDeclaration {
             name: Identifier {
@@ -428,14 +444,7 @@ impl<'a> Parser<'a> {
         self.expect_token(&TokenKind::Assign)?;
 
         let ty = self.parse_ty()?;
-
-        if self.current_token.kind != TokenKind::Semicolon {
-            return Err(ParsingError::expected_next_token(
-                TokenKind::Semicolon.to_string(),
-                self.current_token.kind.to_string(),
-                self.position,
-            ));
-        }
+        expect_semicolon_without_next_token! { self }
 
         Ok(Declaration {
             name: Identifier {
@@ -602,7 +611,7 @@ impl<'a> Parser<'a> {
 
             let expression = self.parse_expression(&Priority::Lowest)?;
             return Ok(Expression::Assign(AssignExpression {
-                identifier,
+                name: identifier,
                 value: Box::new(expression),
                 position: self.position,
             }));
@@ -931,7 +940,7 @@ impl<'a> Parser<'a> {
                     kind: ty?,
                     position: self.position,
                 }),
-                size,
+                len: size,
                 position: self.position,
             }));
         }
