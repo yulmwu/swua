@@ -1,4 +1,4 @@
-use super::{BlockExpression, CompileResult, Expression, Identifier};
+use super::{BlockExpression, CompileError, CompileResult, Expression, Identifier};
 use crate::{
     AstType, Compiler, ExpressionCodegen, FunctionType, Position, StatementCodegen, StructType,
     SymbolTable,
@@ -49,20 +49,26 @@ pub struct LetStatement {
 impl StatementCodegen for LetStatement {
     fn codegen(&self, compiler: &mut Compiler) -> CompileResult<()> {
         let value = self.value.codegen(compiler)?;
-        let ty = match self.ty.clone() {
-            Some(ty) => ty.kind.to_codegen_type(&compiler.symbol_table)?,
-            None => value.ty.clone(),
-        };
+        if let Some(ty) = self.ty.clone() {
+            let inferred_ty = ty.kind.to_codegen_type(&compiler.symbol_table)?;
+            if inferred_ty != value.ty {
+                return Err(CompileError::type_mismatch(
+                    inferred_ty,
+                    value.ty,
+                    self.position, // TODO: Use .position by implementing the GetPosition trait for each AST
+                ));
+            }
+        }
 
         let alloca = compiler.builder.build_alloca(
-            ty.to_llvm_type(compiler.context),
+            value.ty.to_llvm_type(compiler.context),
             format!("var.{}", self.name.identifier).as_str(),
         );
 
         compiler.builder.build_store(alloca, value.llvm_value);
         compiler
             .symbol_table
-            .insert_variable(self.name.identifier.clone(), ty, alloca);
+            .insert_variable(self.name.identifier.clone(), value.ty, alloca);
 
         Ok(())
     }

@@ -54,10 +54,6 @@ impl CompileError {
         Self::new(CompileErrorKind::TypeThatCannotBeIndexed, position)
     }
 
-    pub fn array_elements_must_be_of_the_same_type(position: Position) -> Self {
-        Self::new(CompileErrorKind::ArrayElementsMustBeOfTheSameType, position)
-    }
-
     pub fn array_must_have_at_least_one_element(position: Position) -> Self {
         Self::new(CompileErrorKind::ArrayMustHaveAtLeastOneElement, position)
     }
@@ -174,7 +170,6 @@ pub enum CompileErrorKind {
     Unexpected(String),
     TypeMismatch(String, String),
     TypeThatCannotBeIndexed,
-    ArrayElementsMustBeOfTheSameType,
     ArrayMustHaveAtLeastOneElement,
     IdentifierNotFound(String),
     VariableAlreadyDeclared(String),
@@ -201,9 +196,6 @@ impl fmt::Display for CompileErrorKind {
                 write!(f, "expected `{expected}`, but found `{found}`")
             }
             Self::TypeThatCannotBeIndexed => write!(f, "type that cannot be indexed"),
-            Self::ArrayElementsMustBeOfTheSameType => {
-                write!(f, "array elements must be of the same type")
-            }
             Self::ArrayMustHaveAtLeastOneElement => {
                 write!(f, "array must have at least one element")
             }

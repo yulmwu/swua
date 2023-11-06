@@ -3,7 +3,7 @@ use crate::{
     BinaryOperator, CodegenType, Compiler, ExpressionCodegen, Position, StatementCodegen,
     SymbolTable, UnaryOperator, Value,
 };
-use inkwell::values::BasicMetadataValueEnum;
+use inkwell::values::{BasicMetadataValueEnum, BasicValue};
 
 #[derive(Debug, Clone)]
 pub enum Expression {
@@ -48,7 +48,7 @@ impl ExpressionCodegen for BinaryExpression {
         match self.operator {
             Dot => self.codegen_dot(compiler),
             Plus | Minus | Asterisk | Slash | Percent => self.codegen_arithmetic(compiler),
-            EQ | NEQ | LT | GT | LTE | GTE => todo!(),
+            EQ | NEQ | LT | GT | LTE | GTE => self.codegen_comparison(compiler),
         }
     }
 }
@@ -57,7 +57,7 @@ impl BinaryExpression {
     fn codegen_dot<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
         let left = self.left.codegen(compiler)?;
         let left_ty = match left.ty {
-            CodegenType::StructType(struct_type) => struct_type,
+            CodegenType::Struct(struct_type) => struct_type,
             _ => return Err(CompileError::expected("struct", self.position)),
         };
 
@@ -79,7 +79,7 @@ impl BinaryExpression {
 
         let ptr = unsafe {
             compiler.builder.build_gep(
-                CodegenType::StructType(left_ty.clone()).to_llvm_type(compiler.context),
+                CodegenType::Struct(left_ty.clone()).to_llvm_type(compiler.context),
                 left.llvm_value.into_pointer_value(),
                 &[compiler.context.i64_type().const_int(field.0 as u64, false)],
                 format!("ptr.struct.{}.{}", left_ty.name, field.0).as_str(),
@@ -92,7 +92,10 @@ impl BinaryExpression {
             format!("struct.{}.{}", left_ty.name, field.0).as_str(),
         );
 
-        Ok(Value::new(load, field.1.clone()))
+        Ok(Value::new(
+            load,
+            left_ty.fields.get(&right.identifier).unwrap().1.clone(),
+        ))
     }
 
     fn codegen_arithmetic<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
@@ -109,16 +112,63 @@ impl BinaryExpression {
             _ => return Err(CompileError::expected("int", self.position)),
         };
 
+        use BinaryOperator::*;
+
         let result = match self.operator {
-            BinaryOperator::Plus => compiler.builder.build_int_add(left, right, "add"),
-            BinaryOperator::Minus => compiler.builder.build_int_sub(left, right, "sub"),
-            BinaryOperator::Asterisk => compiler.builder.build_int_mul(left, right, "mul"),
-            BinaryOperator::Slash => compiler.builder.build_int_signed_div(left, right, "div"),
-            BinaryOperator::Percent => compiler.builder.build_int_signed_rem(left, right, "rem"),
+            Plus => compiler.builder.build_int_add(left, right, "add"),
+            Minus => compiler.builder.build_int_sub(left, right, "sub"),
+            Asterisk => compiler.builder.build_int_mul(left, right, "mul"),
+            Slash => compiler.builder.build_int_signed_div(left, right, "div"),
+            Percent => compiler.builder.build_int_signed_rem(left, right, "rem"),
             _ => unreachable!(),
         };
 
         Ok(Value::new(result.into(), CodegenType::Int))
+    }
+
+    fn codegen_comparison<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let left = self.left.codegen(compiler)?;
+        let right = self.right.codegen(compiler)?;
+
+        let left = match left.ty {
+            CodegenType::Int => left.llvm_value.into_int_value(),
+            _ => return Err(CompileError::expected("int", self.position)),
+        };
+
+        let right = match right.ty {
+            CodegenType::Int => right.llvm_value.into_int_value(),
+            _ => return Err(CompileError::expected("int", self.position)),
+        };
+
+        use BinaryOperator::*;
+
+        let result = match self.operator {
+            EQ => compiler
+                .builder
+                .build_int_compare(inkwell::IntPredicate::EQ, left, right, "eq"),
+            NEQ => compiler
+                .builder
+                .build_int_compare(inkwell::IntPredicate::NE, left, right, "ne"),
+            LT => compiler
+                .builder
+                .build_int_compare(inkwell::IntPredicate::SLT, left, right, "lt"),
+            GT => compiler
+                .builder
+                .build_int_compare(inkwell::IntPredicate::SGT, left, right, "gt"),
+            LTE => {
+                compiler
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::SLE, left, right, "lte")
+            }
+            GTE => {
+                compiler
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::SGE, left, right, "gte")
+            }
+            _ => unreachable!(),
+        };
+
+        Ok(Value::new(result.into(), CodegenType::Boolean))
     }
 }
 
@@ -130,21 +180,74 @@ pub struct UnaryExpression {
 }
 
 impl ExpressionCodegen for UnaryExpression {
-    fn codegen<'a>(&self, _: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
-        todo!()
+    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        use UnaryOperator::*;
+        match self.operator {
+            Minus => self.codegen_minus(compiler),
+            Not => self.codegen_not(compiler),
+        }
+    }
+}
+
+impl UnaryExpression {
+    fn codegen_minus<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let expression = self.expression.codegen(compiler)?;
+
+        Ok(match expression.ty {
+            CodegenType::Int => {
+                let result = compiler
+                    .builder
+                    .build_int_neg(expression.llvm_value.into_int_value(), "neg");
+                Value::new(result.into(), CodegenType::Int)
+            }
+            CodegenType::Float => {
+                let result = compiler
+                    .builder
+                    .build_float_neg(expression.llvm_value.into_float_value(), "neg");
+                Value::new(result.into(), CodegenType::Float)
+            }
+            _ => return Err(CompileError::expected("int or float", self.position)),
+        })
+    }
+
+    fn codegen_not<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let expression = self.expression.codegen(compiler)?;
+
+        let expression = match expression.ty {
+            CodegenType::Boolean => expression.llvm_value.into_int_value(),
+            _ => return Err(CompileError::expected("boolean", self.position)),
+        };
+
+        let result = compiler.builder.build_not(expression, "not");
+        Ok(Value::new(result.into(), CodegenType::Boolean))
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct AssignExpression {
-    pub identifier: Identifier,
+    pub name: Identifier,
     pub value: Box<Expression>,
     pub position: Position,
 }
 
 impl ExpressionCodegen for AssignExpression {
-    fn codegen<'a>(&self, _: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
-        todo!()
+    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let value = self.value.codegen(compiler)?;
+
+        Ok(
+            match compiler.symbol_table.get_variable(&self.name.identifier) {
+                Some(entry) => {
+                    compiler.builder.build_store(entry.0, value.llvm_value);
+                    value
+                }
+                None => {
+                    return Err(CompileError::identifier_not_found(
+                        self.name.identifier.clone(),
+                        self.position,
+                    ))
+                }
+            },
+        )
     }
 }
 
@@ -162,7 +265,6 @@ impl ExpressionCodegen for BlockExpression {
         for statement in self.statements.clone() {
             if let Statement::Return(return_statement) = statement {
                 let value = return_statement.value.codegen(compiler)?;
-                compiler.builder.build_return(Some(&value.llvm_value));
                 compiler.symbol_table = original_symbol_table;
                 return Ok(value);
             }
@@ -188,8 +290,68 @@ pub struct IfExpression {
 }
 
 impl ExpressionCodegen for IfExpression {
-    fn codegen<'a>(&self, _: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
-        todo!()
+    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let condition = self.condition.codegen(compiler)?;
+        if condition.ty != CodegenType::Boolean {
+            return Err(CompileError::expected("boolean", self.position));
+        }
+
+        let function = compiler
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap();
+
+        let then_block = compiler.context.append_basic_block(function, "then");
+        let else_block = compiler.context.append_basic_block(function, "else");
+        let merge_block = compiler.context.append_basic_block(function, "merge");
+
+        compiler.builder.build_conditional_branch(
+            condition.llvm_value.into_int_value(),
+            then_block,
+            else_block,
+        );
+
+        compiler.builder.position_at_end(then_block);
+
+        let then = self.consequence.codegen(compiler)?;
+        compiler.builder.build_unconditional_branch(merge_block);
+
+        let then_block = compiler.builder.get_insert_block().unwrap();
+
+        compiler.builder.position_at_end(else_block);
+
+        let else_ = match self.alternative.clone() {
+            Some(expr) => expr.codegen(compiler)?,
+            None => Value::new(
+                compiler
+                    .context
+                    .i64_type()
+                    .const_int(0, false)
+                    .as_basic_value_enum(),
+                CodegenType::Void,
+            ),
+        };
+        compiler.builder.build_unconditional_branch(merge_block);
+
+        let else_block = compiler.builder.get_insert_block().unwrap();
+
+        compiler.builder.position_at_end(merge_block);
+
+        if then.ty != else_.ty {
+            return Err(CompileError::if_else_must_have_the_same_type(self.position));
+        }
+
+        let phi = compiler
+            .builder
+            .build_phi(then.llvm_value.get_type(), "iftmp");
+        phi.add_incoming(&[
+            (&then.llvm_value, then_block),
+            (&else_.llvm_value, else_block),
+        ]);
+
+        Ok(Value::new(phi.as_basic_value(), then.ty))
     }
 }
 
@@ -265,8 +427,36 @@ pub struct IndexExpression {
 }
 
 impl ExpressionCodegen for IndexExpression {
-    fn codegen<'a>(&self, _: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
-        todo!()
+    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let left = self.left.codegen(compiler)?;
+        let index = self.index.codegen(compiler)?;
+
+        Ok(match index.ty {
+            CodegenType::Int => {
+                let element_ty = match left.ty {
+                    CodegenType::Array(array_type) => *array_type.ty,
+                    _ => unreachable!(),
+                };
+                let element_ll_ty = element_ty.to_llvm_type(compiler.context);
+
+                let ptr = unsafe {
+                    compiler.builder.build_gep(
+                        element_ll_ty,
+                        left.llvm_value.into_pointer_value(),
+                        &[index.llvm_value.into_int_value()],
+                        "ptr_array_index",
+                    )
+                };
+
+                Value::new(
+                    compiler
+                        .builder
+                        .build_load(element_ll_ty, ptr, "load_array_index"),
+                    element_ty,
+                )
+            }
+            _ => return Err(CompileError::unknown_type(index.ty, self.position)),
+        })
     }
 }
 
@@ -277,8 +467,30 @@ pub struct TypeofExpression {
 }
 
 impl ExpressionCodegen for TypeofExpression {
-    fn codegen<'a>(&self, _: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
-        todo!()
+    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let expr = self.expression.codegen(compiler)?;
+
+        use CodegenType::*;
+
+        let ty_num = match expr.ty {
+            Int => 0,
+            Float => 1,
+            String => 2,
+            Boolean => 3,
+            Array(_) => 4,
+            Struct(_) => 5,
+            Function(_) => 6,
+            Void => 7,
+        };
+
+        Ok(Value::new(
+            compiler
+                .context
+                .i64_type()
+                .const_int(ty_num as u64, false)
+                .into(),
+            CodegenType::Int,
+        ))
     }
 }
 
@@ -289,7 +501,26 @@ pub struct SizeofExpression {
 }
 
 impl ExpressionCodegen for SizeofExpression {
-    fn codegen<'a>(&self, _: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
-        todo!()
+    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let value = self.expression.codegen(compiler)?;
+
+        let size = match value.ty {
+            CodegenType::Array(array_type) => {
+                let length = match array_type.len {
+                    Some(length) => length,
+                    _ => return Err(CompileError::unknown_size(array_type.position)),
+                };
+                let length = compiler.context.i64_type().const_int(length as u64, false);
+
+                compiler.builder.build_int_mul(
+                    array_type.ty.size_of(compiler.context, self.position)?,
+                    length,
+                    "array_size",
+                )
+            }
+            ty => ty.size_of(compiler.context, self.position)?,
+        };
+
+        Ok(Value::new(size.as_basic_value_enum(), CodegenType::Int))
     }
 }
