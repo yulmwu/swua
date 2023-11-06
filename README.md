@@ -42,29 +42,16 @@ $ ./build/main
 # Syntax
 
 ```rust
-extern fn print(int) -> int;
-extern fn print_str(string) -> int;
-extern fn print_array(int[], int) -> int;
-// extern fn printf(string) -> int;
-
-fn add(a: int, b: int) -> int {
-    return a + b;
-}
+extern fn print_str(string) -> string;
+extern fn concat_str(string, string) -> string;
 
 fn main() -> int {
-    let arr = [1, 2, 3, 4, 5];
-    print_array(arr, 5);
-
-    let r = if add(arr[2], 5) == 8 {
-        return "condition: true";
-    } else {
-        return "condition: false";
-    };
-    print_str(r);
-
+    print_str(concat_str("Hello, ", "World!"));
     return 0;
 }
 ```
+
+See [examples](./examples) for more details.
 
 > **Note**
 >
