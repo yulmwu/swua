@@ -1,21 +1,39 @@
 extern fn print(int) -> int;
+extern fn print_str(string) -> int;
+extern fn print_array(int[], int) -> int;
+extern fn to_string(int) -> string;
+extern fn concat_str(string, string) -> string;
 
-struct Foo { x: int, y: int, };
-struct Bar { a: Foo, b: Foo, };
+struct Foo { x: int, y: int };
+struct Bar { data: Foo[], bar: int[] };
 
-fn add(a: int, b: int) -> int {
-    return a + b;
-}
+fn add(a: int, b: int) -> int => a + b;
 
 fn main() -> int {
     let foo1: Foo = struct Foo { x: 2, y: 3 };
     let foo2: Foo = struct Foo { x: 10, y: 20 };
-    let bar: Bar = struct Bar { a: foo1, b: foo2 };
-    let a: int = add(bar.a.x, bar.b.x); // 12
-    let b: int = add(bar.a.y, bar.b.y); // 23
 
-    print(a);
-    print(b);
+    let bar: Bar = struct Bar {
+        data: [foo1, foo2],
+        bar: [0, 1, 2, 3, 4, 5]
+    };
+    print_array(bar.bar, (sizeof bar.bar) / sizeof bar.bar[0]);
 
-    return add(a, b);
+    let a = add(bar.data[bar.bar[0]].x, bar.data[bar.bar[1]].x); // 12
+    let b = add(bar.data[bar.bar[0]].y, bar.data[bar.bar[1]].y); // 23
+
+    print_str(concat_str("a = ", to_string(a)));
+    print_str(concat_str("b = ", to_string(b)));
+
+    let result = if a == 12 {
+        print_str("a == 12");
+        return add(a, b);
+    } else {
+        print_str(concat_str("a != 12, a = ", to_string(a)));
+        return 0;
+    };
+
+    print_str(concat_str("result = ", to_string(result)));
+
+    return 0;
 }
