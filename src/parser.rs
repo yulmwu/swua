@@ -283,7 +283,6 @@ impl<'a> Parser<'a> {
                         position: identifier_position,
                     },
                     ty,
-                    position: self.position,
                 });
             } else {
                 return Err(ParsingError::unexpected_token(
@@ -357,10 +356,7 @@ impl<'a> Parser<'a> {
         let mut parameters = Vec::new();
 
         while self.current_token.kind != TokenKind::RParen {
-            parameters.push(ExternalFunctionParameter {
-                ty: self.parse_ty()?,
-                position: self.position,
-            });
+            parameters.push(self.parse_ty()?);
 
             if self.current_token.kind == TokenKind::RParen {
                 break;
@@ -652,10 +648,7 @@ impl<'a> Parser<'a> {
                     let mut arguments = Vec::new();
 
                     if self.current_token.kind != TokenKind::RParen {
-                        arguments.push(Argument {
-                            value: self.parse_expression(&Priority::Lowest)?,
-                            position: self.position,
-                        });
+                        arguments.push(self.parse_expression(&Priority::Lowest)?);
                         self.next_token();
 
                         if self.current_token.kind == TokenKind::Comma {
@@ -663,10 +656,7 @@ impl<'a> Parser<'a> {
                         }
 
                         while self.current_token.kind != TokenKind::RParen {
-                            arguments.push(Argument {
-                                value: self.parse_expression(&Priority::Lowest)?,
-                                position: self.position,
-                            });
+                            arguments.push(self.parse_expression(&Priority::Lowest)?);
                             self.next_token();
 
                             if self.current_token.kind == TokenKind::RParen {
@@ -750,11 +740,7 @@ impl<'a> Parser<'a> {
         }
 
         while self.current_token.kind != TokenKind::RBrace {
-            let element_position = self.position;
-            elements.push(Element {
-                value: self.parse_expression(&Priority::Lowest)?,
-                position: element_position,
-            });
+            elements.push(self.parse_expression(&Priority::Lowest)?);
             self.next_token();
 
             if self.current_token.kind == TokenKind::RBracket {
@@ -795,11 +781,8 @@ impl<'a> Parser<'a> {
 
             self.expect_token(&TokenKind::Colon)?;
 
-            let position = self.position;
-            let value = self.parse_expression(&Priority::Lowest)?;
+            fields.insert(key.clone(), self.parse_expression(&Priority::Lowest)?);
             self.next_token();
-
-            fields.insert(key.clone(), Field { value, position });
 
             if self.current_token.kind == TokenKind::RBrace {
                 break;
