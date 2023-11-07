@@ -75,7 +75,7 @@ impl BinaryExpression {
         let left = self.left.codegen(compiler)?;
         let left_ty = match left.ty {
             CodegenType::Struct(struct_type) => struct_type,
-            _ => return Err(CompileError::expected("struct", self.position)),
+            _ => return Err(CompileError::member_access_non_struct_type(self.position)),
         };
 
         let right = match *self.right.clone() {
@@ -404,7 +404,7 @@ impl ExpressionCodegen for CallExpression {
 
                 (value, function)
             }
-            _ => return Err(CompileError::expected("identifier", self.position)),
+            _ => return Err(CompileError::call_non_function_type(self.position)),
         };
 
         if self.arguments.len() != entry.1.parameters.len() {

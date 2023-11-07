@@ -78,13 +78,12 @@ impl_error_kind! {
     StructNotFound(name: String): struct_not_found<T: ToString>(T) => "struct `{name}` not found",
     FieldNotFound(name: String): field_not_found<T: ToString>(T) => "field `{name}` not found",
     FunctionNotFound(name: String): function_not_found<T: ToString>(T) => "function `{name}` not found",
-    UnknownType(ty: String): unknown_type<T: ToString>(T) => "unknown type `{ty}`",
-    UnknownOperator(operator: String): unknown_operator<T: ToString>(T) => "unknown operator `{operator}`",
     UnknownSize: unknown_size => "unknown size",
     IfElseMustHaveTheSameType: if_else_must_have_the_same_type => "if else must have the same type",
     WrongNumberOfArguments(expected: String, found: String): wrong_number_of_arguments(usize, usize) => "wrong number of arguments: expected `{expected}`, found `{found}`",
     WrongNumberOfFields(expected: String, found: String): wrong_number_of_fields(usize, usize) => "wrong number of fields: expected `{expected}`, found `{found}`",
-    CallNonFunctionType(ty: String): call_non_function_type<T: ToString>(T) => "call non-function type `{ty}`"
+    CallNonFunctionType: call_non_function_type => "call non-function type",
+    MemberAccessNonStructType: member_access_non_struct_type => "member access non-struct type"
 }
 
 pub type CompileResult<T> = Result<T, CompileError>;

@@ -237,6 +237,14 @@ impl ExpressionCodegen for StructLiteral {
             }
         };
 
+        if self.fields.len() != struct_type.fields.len() {
+            return Err(CompileError::wrong_number_of_fields(
+                struct_type.fields.len(),
+                self.fields.len(),
+                self.position,
+            ));
+        }
+
         let mut values: Vec<BasicValueEnum> = Vec::new();
         let mut feilds_type = BTreeMap::new();
 
