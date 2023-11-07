@@ -39,8 +39,19 @@ impl<'a> SymbolTable<'a> {
         }
     }
 
-    pub fn insert_variable(&mut self, name: String, ty: CodegenType, value: PointerValue<'a>) {
+    pub fn insert_variable(
+        &mut self,
+        name: String,
+        ty: CodegenType,
+        value: PointerValue<'a>,
+        position: Position,
+    ) -> CompileResult<()> {
+        if self.entries.symbols.contains_key(&name) {
+            return Err(CompileError::variable_already_declared(name, position));
+        }
+
         self.entries.symbols.insert(name, (value, ty));
+        Ok(())
     }
 
     pub fn insert_function(
@@ -48,8 +59,16 @@ impl<'a> SymbolTable<'a> {
         name: String,
         ty: types::FunctionType<'a>,
         function_type: FunctionType,
-    ) {
+    ) -> CompileResult<()> {
+        if self.entries.functions.contains_key(&name) {
+            return Err(CompileError::function_already_declared(
+                name,
+                function_type.position,
+            ));
+        }
+
         self.entries.functions.insert(name, (ty, function_type));
+        Ok(())
     }
 
     pub fn insert_struct(
@@ -57,8 +76,16 @@ impl<'a> SymbolTable<'a> {
         name: String,
         ty: types::StructType<'a>,
         struct_type: StructType,
-    ) {
+    ) -> CompileResult<()> {
+        if self.entries.structs.contains_key(&name) {
+            return Err(CompileError::struct_already_declared(
+                name,
+                struct_type.position,
+            ));
+        }
+
         self.entries.structs.insert(name, (ty, struct_type));
+        Ok(())
     }
 
     pub fn get_variable(&self, name: &str) -> Option<(PointerValue<'a>, CodegenType)> {

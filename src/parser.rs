@@ -12,71 +12,46 @@ pub struct ParsingError {
     pub position: Position,
 }
 
-impl ParsingError {
-    pub fn new(kind: ParsingErrorKind, position: Position) -> Self {
-        Self { kind, position }
-    }
-
-    pub fn expected_next_token<T>(expected: T, got: T, position: Position) -> Self
-    where
-        T: ToString,
-    {
-        Self::new(
-            ParsingErrorKind::ExpectedNextToken(expected.to_string(), got.to_string()),
-            position,
-        )
-    }
-
-    pub fn expected_ty<T>(expected: T, position: Position) -> Self
-    where
-        T: ToString,
-    {
-        Self::new(ParsingErrorKind::ExpectedTy(expected.to_string()), position)
-    }
-
-    pub fn expected_expression<T>(expected: T, position: Position) -> Self
-    where
-        T: ToString,
-    {
-        Self::new(
-            ParsingErrorKind::ExpectedExpression(expected.to_string()),
-            position,
-        )
-    }
-
-    pub fn unexpected_token<T>(token: T, position: Position) -> Self
-    where
-        T: ToString,
-    {
-        Self::new(
-            ParsingErrorKind::UnexpectedToken(token.to_string()),
-            position,
-        )
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-#[rustfmt::skip]
-pub enum ParsingErrorKind {
-    ExpectedNextToken(String, String),
-    ExpectedTy(String),
-    ExpectedExpression(String),
-    UnexpectedToken(String),
-}
-
-impl fmt::Display for ParsingErrorKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ParsingErrorKind::ExpectedNextToken(expected, got) => {
-                write!(f, "expected `{expected}` but got `{got}`")
-            }
-            ParsingErrorKind::ExpectedTy(expected) => write!(f, "expected type `{expected}`"),
-            ParsingErrorKind::ExpectedExpression(expected) => {
-                write!(f, "expected expression `{expected}`")
-            }
-            ParsingErrorKind::UnexpectedToken(token) => write!(f, "unexpected token `{token}`"),
+macro_rules! impl_error_kind {
+    (
+        $(
+            $ident:ident$(($($arg:ident: $ty:ty),*))?:
+            $fn:ident$(<$gen:ident$(: $gen_1:tt$(+$gen_n:tt)*)?>)? $(($($param_ty:ty),*))? => $fmt:expr
+        ),*
+    ) => {
+        #[derive(Debug, Clone, PartialEq)]
+        pub enum ParsingErrorKind {
+            $($ident$(($($ty),*))?,)*
         }
-    }
+
+        impl fmt::Display for ParsingErrorKind {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    $(Self::$ident$(($($arg),*))? => write!(f, $fmt),)*
+                }
+            }
+        }
+
+        impl ParsingError {
+            pub fn new(kind: ParsingErrorKind, position: Position) -> Self {
+                Self { kind, position }
+            }
+
+            $(
+                pub fn $fn<$($gen$(: $gen_1$(+$gen_n)*)?)?>($($($arg: $param_ty,)*)? position: Position) -> Self
+                {
+                    Self::new(ParsingErrorKind::$ident$(($($arg.to_string()),*))?, position)
+                }
+            )*
+        }
+    };
+}
+
+impl_error_kind! {
+    ExpectedNextToken(expected: String, got: String): expected_next_token<T: ToString>(T, T) => "expected `{expected}` but got `{got}`",
+    ExpectedTy(expected: String): expected_ty<T: ToString>(T) => "expected type `{expected}`",
+    ExpectedExpression(expected: String): expected_expression<T: ToString>(T) => "expected expression `{expected}`",
+    UnexpectedToken(token: String): unexpected_token<T: ToString>(T) => "unexpected token `{token}`"
 }
 
 pub type ParseResult<T> = Result<T, ParsingError>;
