@@ -4,6 +4,7 @@ use crate::{
     SymbolTable, UnaryOperator, Value,
 };
 use inkwell::values::{BasicMetadataValueEnum, BasicValue};
+use std::fmt;
 
 #[derive(Debug, Clone)]
 pub enum Expression {
@@ -51,6 +52,22 @@ impl From<Expression> for Position {
     }
 }
 
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        macro_rules! inner {
+            ($($ident:ident)*) => {
+                match self {
+                    $(
+                        Expression::$ident(expression) => write!(f, "{expression}"),
+                    )*
+                }
+            };
+        }
+
+        inner! { Literal Binary Unary Assign Block If Call Index Typeof Sizeof }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BinaryExpression {
     pub left: Box<Expression>,
@@ -75,7 +92,10 @@ impl BinaryExpression {
         let left = self.left.codegen(compiler)?;
         let left_ty = match left.ty {
             CodegenType::Struct(struct_type) => struct_type,
-            _ => return Err(CompileError::member_access_non_struct_type(self.position)),
+            _ => {
+                println!("{:?}", left.ty);
+                return Err(CompileError::member_access_non_struct_type(self.position));
+            }
         };
 
         let right = match *self.right.clone() {
@@ -189,6 +209,12 @@ impl BinaryExpression {
     }
 }
 
+impl fmt::Display for BinaryExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {} {}", self.left, self.operator, self.right)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UnaryExpression {
     pub operator: UnaryOperator,
@@ -240,6 +266,12 @@ impl UnaryExpression {
     }
 }
 
+impl fmt::Display for UnaryExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}", self.operator, self.expression)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AssignExpression {
     pub name: Identifier,
@@ -268,6 +300,12 @@ impl ExpressionCodegen for AssignExpression {
     }
 }
 
+impl fmt::Display for AssignExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} = {}", self.name, self.value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BlockExpression {
     pub statements: Vec<Statement>,
@@ -293,8 +331,18 @@ impl ExpressionCodegen for BlockExpression {
 
         Ok(Value::new(
             compiler.context.i64_type().const_int(0, false).into(),
-            CodegenType::Int, // Void
+            CodegenType::Void,
         ))
+    }
+}
+
+impl fmt::Display for BlockExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut statements = String::new();
+        for statement in self.statements.clone() {
+            statements.push_str(format!("{}\n", statement).as_str());
+        }
+        write!(f, "{{\n{}\n}}", statements)
     }
 }
 
@@ -369,6 +417,19 @@ impl ExpressionCodegen for IfExpression {
         ]);
 
         Ok(Value::new(phi.as_basic_value(), then.ty))
+    }
+}
+
+impl fmt::Display for IfExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.alternative.clone() {
+            Some(alternative) => write!(
+                f,
+                "if {} {} else {}",
+                self.condition, self.consequence, alternative
+            ),
+            None => write!(f, "if {} {}", self.condition, self.consequence),
+        }
     }
 }
 
@@ -448,6 +509,16 @@ impl ExpressionCodegen for CallExpression {
     }
 }
 
+impl fmt::Display for CallExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut arguments = String::new();
+        for argument in self.arguments.clone() {
+            arguments.push_str(format!("{argument}, ").as_str());
+        }
+        write!(f, "{}({arguments})", self.function)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct IndexExpression {
     pub left: Box<Expression>,
@@ -461,13 +532,12 @@ impl ExpressionCodegen for IndexExpression {
         let index = self.index.codegen(compiler)?;
 
         Ok(match left.ty {
-            CodegenType::Array(element_ty) => {
+            CodegenType::Array(array) => {
                 let index = match index.ty {
                     CodegenType::Int => index.llvm_value.into_int_value(),
                     _ => return Err(CompileError::expected("int", self.position)),
                 };
-                let element_ty = CodegenType::Array(element_ty);
-                let element_ll_ty = element_ty.to_llvm_type(compiler.context);
+                let element_ll_ty = array.ty.to_llvm_type(compiler.context);
 
                 let ptr = unsafe {
                     compiler.builder.build_gep(
@@ -482,7 +552,7 @@ impl ExpressionCodegen for IndexExpression {
                     compiler
                         .builder
                         .build_load(element_ll_ty, ptr, "load_array_index"),
-                    element_ty,
+                    *array.ty,
                 )
             }
             _ => {
@@ -491,6 +561,12 @@ impl ExpressionCodegen for IndexExpression {
                 ))
             }
         })
+    }
+}
+
+impl fmt::Display for IndexExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}[{}]", self.left, self.index)
     }
 }
 
@@ -528,6 +604,12 @@ impl ExpressionCodegen for TypeofExpression {
     }
 }
 
+impl fmt::Display for TypeofExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "typeof {}", self.expression)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SizeofExpression {
     pub expression: Box<Expression>,
@@ -556,5 +638,11 @@ impl ExpressionCodegen for SizeofExpression {
         };
 
         Ok(Value::new(size.as_basic_value_enum(), CodegenType::Int))
+    }
+}
+
+impl fmt::Display for SizeofExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "sizeof {}", self.expression)
     }
 }

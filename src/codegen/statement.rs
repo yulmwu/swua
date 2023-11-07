@@ -4,7 +4,7 @@ use crate::{
     SymbolTable,
 };
 use inkwell::types::BasicType;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt};
 
 #[derive(Debug, Clone)]
 pub enum Statement {
@@ -32,6 +32,27 @@ impl StatementCodegen for Statement {
 
         inner! {
             Expression LetStatement FunctionDefinition ExternalFunctionDeclaration StructDeclaration Return TypeDeclaration Declaration
+        }
+
+        Ok(())
+    }
+}
+
+impl fmt::Display for Statement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        macro_rules! inner {
+            ($($ident:ident)*) => {
+                match self {
+                    Statement::Expression(expression) => { write!(f, "{expression};")?; },
+                    $(
+                        Statement::$ident(statement) => { write!(f, "{statement}")?; },
+                    )*
+                }
+            };
+        }
+
+        inner! {
+            LetStatement FunctionDefinition ExternalFunctionDeclaration StructDeclaration Return TypeDeclaration Declaration
         }
 
         Ok(())
@@ -74,6 +95,20 @@ impl StatementCodegen for LetStatement {
         )?;
 
         Ok(())
+    }
+}
+
+impl fmt::Display for LetStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(ty) = self.ty.clone() {
+            write!(
+                f,
+                "let {} : {} = {}",
+                self.name.identifier, ty.kind, self.value
+            )
+        } else {
+            write!(f, "let {} = {}", self.name.identifier, self.value)
+        }
     }
 }
 
@@ -178,6 +213,23 @@ impl StatementCodegen for FunctionDefinition {
     }
 }
 
+impl fmt::Display for FunctionDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "fn {}({}) -> {} {}",
+            self.name.identifier,
+            self.parameters
+                .iter()
+                .map(|parameter| format!("{}: {}", parameter.name.identifier, parameter.ty.kind))
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.return_type.kind,
+            self.body
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExternalFunctionDeclaration {
     pub name: Identifier,
@@ -234,16 +286,26 @@ impl StatementCodegen for ExternalFunctionDeclaration {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct StructDeclaration {
-    pub name: Identifier,
-    pub fields: BTreeMap<String, FieldTy>,
-    pub position: Position,
+impl fmt::Display for ExternalFunctionDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "extern fn {}({}) -> {}",
+            self.name.identifier,
+            self.parameters
+                .iter()
+                .map(|parameter| format!("{}", parameter.kind))
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.return_type.kind
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct FieldTy {
-    pub ty: AstType,
+pub struct StructDeclaration {
+    pub name: Identifier,
+    pub fields: BTreeMap<String, AstType>,
     pub position: Position,
 }
 
@@ -254,10 +316,7 @@ impl StatementCodegen for StructDeclaration {
         for (i, (name, ty)) in self.fields.iter().enumerate() {
             fields.insert(
                 name.clone(),
-                (
-                    i,
-                    ty.ty.kind.to_codegen_type(&compiler.symbol_table)?.clone(),
-                ),
+                (i, ty.kind.to_codegen_type(&compiler.symbol_table)?.clone()),
             );
         }
 
@@ -289,6 +348,21 @@ impl StatementCodegen for StructDeclaration {
     }
 }
 
+impl fmt::Display for StructDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "struct {} {{ {} }}",
+            self.name.identifier,
+            self.fields
+                .iter()
+                .map(|(name, ty)| format!("{}: {}", name, ty.kind))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ReturnStatement {
     pub value: Expression,
@@ -301,6 +375,12 @@ impl StatementCodegen for ReturnStatement {
         compiler.builder.build_return(Some(&value.llvm_value));
 
         Ok(())
+    }
+}
+
+impl fmt::Display for ReturnStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "return {};", self.value)
     }
 }
 
@@ -317,6 +397,12 @@ impl StatementCodegen for TypeDeclaration {
     }
 }
 
+impl fmt::Display for TypeDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "type {} = {};", self.name.identifier, self.ty.kind)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Declaration {
     pub name: Identifier,
@@ -327,5 +413,11 @@ pub struct Declaration {
 impl StatementCodegen for Declaration {
     fn codegen(&self, _: &mut Compiler) -> CompileResult<()> {
         todo!()
+    }
+}
+
+impl fmt::Display for Declaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "declare {} = {};", self.name.identifier, self.ty.kind)
     }
 }

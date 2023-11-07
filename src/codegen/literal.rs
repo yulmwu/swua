@@ -4,7 +4,7 @@ use inkwell::{
     types::BasicType,
     values::{BasicValue, BasicValueEnum},
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt};
 
 #[derive(Debug, Clone)]
 pub enum Literal {
@@ -48,6 +48,22 @@ impl From<Literal> for Position {
     }
 }
 
+impl fmt::Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        macro_rules! inner {
+            ($($ident:ident)*) => {
+                match self {
+                    $(
+                        Literal::$ident(literal) => write!(f, "{literal}"),
+                    )*
+                }
+            };
+        }
+
+        inner! { Identifier Int Float Boolean String Array Struct }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Identifier {
     pub identifier: String,
@@ -78,6 +94,12 @@ impl ExpressionCodegen for Identifier {
     }
 }
 
+impl fmt::Display for Identifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.identifier)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct IntLiteral {
     pub value: i64,
@@ -97,6 +119,12 @@ impl ExpressionCodegen for IntLiteral {
     }
 }
 
+impl fmt::Display for IntLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FloatLiteral {
     pub value: f64,
@@ -109,6 +137,12 @@ impl ExpressionCodegen for FloatLiteral {
             compiler.context.f64_type().const_float(self.value).into(),
             CodegenType::Float,
         ))
+    }
+}
+
+impl fmt::Display for FloatLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 
@@ -131,6 +165,12 @@ impl ExpressionCodegen for BooleanLiteral {
     }
 }
 
+impl fmt::Display for BooleanLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct StringLiteral {
     pub value: String,
@@ -147,6 +187,12 @@ impl ExpressionCodegen for StringLiteral {
             string.as_basic_value_enum(),
             CodegenType::String,
         ))
+    }
+}
+
+impl fmt::Display for StringLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\"{}\"", self.value)
     }
 }
 
@@ -213,6 +259,19 @@ impl ExpressionCodegen for ArrayLiteral {
                 position: self.position,
             }),
         ))
+    }
+}
+
+impl fmt::Display for ArrayLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[")?;
+        for (i, val) in self.elements.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{val}")?;
+        }
+        write!(f, "]")
     }
 }
 
@@ -297,5 +356,18 @@ impl ExpressionCodegen for StructLiteral {
                 position: self.position,
             }),
         ))
+    }
+}
+
+impl fmt::Display for StructLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {{", self.name)?;
+        for (i, val) in self.fields.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}: {}", val.0, val.1)?;
+        }
+        write!(f, "}}")
     }
 }
