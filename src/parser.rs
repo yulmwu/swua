@@ -133,17 +133,6 @@ impl<'a> Parser<'a> {
         self.peek_token.kind == *token_type
     }
 
-    /*
-        Lowest,
-    Equals,
-    LessGreater,
-    Sum,
-    Product,
-    Prefix,
-    Call,
-    Index,
-    MemberAccess,
-     */
     fn get_priority(&self, token_type: &TokenKind) -> Priority {
         use Priority::*;
         use TokenKind::*;
@@ -444,13 +433,7 @@ impl<'a> Parser<'a> {
             self.expect_token(&TokenKind::Colon)?;
 
             let ty = self.parse_ty()?;
-            fields.insert(
-                key.clone(),
-                FieldTy {
-                    ty,
-                    position: self.position,
-                },
-            );
+            fields.insert(key.clone(), ty);
 
             if self.current_token.kind == TokenKind::RBrace {
                 break;

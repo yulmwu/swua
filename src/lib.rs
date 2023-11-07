@@ -178,6 +178,28 @@ impl AstTypeKind {
     }
 }
 
+impl fmt::Display for AstTypeKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AstTypeKind::Int => write!(f, "int"),
+            AstTypeKind::Float => write!(f, "float"),
+            AstTypeKind::Boolean => write!(f, "boolean"),
+            AstTypeKind::String => write!(f, "string"),
+            AstTypeKind::Array(array_type) => write!(
+                f,
+                "{}[{}]",
+                array_type.ty.kind,
+                if let Some(len) = array_type.len {
+                    len.to_string()
+                } else {
+                    String::new()
+                }
+            ),
+            AstTypeKind::Named(name) => write!(f, "{}", name.identifier),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum CodegenType {
     Int,
@@ -374,6 +396,15 @@ impl Program {
     }
 }
 
+impl fmt::Display for Program {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for statement in self.statements.iter() {
+            writeln!(f, "{}", statement)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum BinaryOperator {
     Dot,      // A.B
@@ -410,6 +441,25 @@ impl From<TokenKind<'_>> for BinaryOperator {
     }
 }
 
+impl fmt::Display for BinaryOperator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Dot => write!(f, "."),
+            Self::Plus => write!(f, "+"),
+            Self::Minus => write!(f, "-"),
+            Self::Asterisk => write!(f, "*"),
+            Self::Slash => write!(f, "/"),
+            Self::Percent => write!(f, "%"),
+            Self::EQ => write!(f, "=="),
+            Self::NEQ => write!(f, "!="),
+            Self::GT => write!(f, ">"),
+            Self::GTE => write!(f, ">="),
+            Self::LT => write!(f, "<"),
+            Self::LTE => write!(f, "<="),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum UnaryOperator {
     Minus,
@@ -422,6 +472,15 @@ impl From<TokenKind<'_>> for UnaryOperator {
             TokenKind::Minus => Self::Minus,
             TokenKind::Bang => Self::Not,
             _ => unreachable!(),
+        }
+    }
+}
+
+impl fmt::Display for UnaryOperator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Minus => write!(f, "-"),
+            Self::Not => write!(f, "!"),
         }
     }
 }
