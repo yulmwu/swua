@@ -55,7 +55,7 @@ impl StatementCodegen for LetStatement {
                 return Err(CompileError::type_mismatch(
                     inferred_ty,
                     value.ty,
-                    self.position, // TODO: Use .position by implementing the GetPosition trait for each AST
+                    self.value.clone().into(),
                 ));
             }
         }
@@ -87,7 +87,6 @@ pub struct FunctionDefinition {
 pub struct Parameter {
     pub name: Identifier,
     pub ty: AstType,
-    pub position: Position,
 }
 
 impl StatementCodegen for FunctionDefinition {
@@ -95,12 +94,14 @@ impl StatementCodegen for FunctionDefinition {
         let mut parameters = Vec::new();
 
         for parameter in self.parameters.clone() {
-            let ty = parameter
-                .ty
-                .kind
-                .to_codegen_type(&compiler.symbol_table)?
-                .to_llvm_type(compiler.context);
-            parameters.push(ty.into());
+            parameters.push(
+                parameter
+                    .ty
+                    .kind
+                    .to_codegen_type(&compiler.symbol_table)?
+                    .to_llvm_type(compiler.context)
+                    .into(),
+            );
         }
 
         let return_type = self
@@ -120,16 +121,11 @@ impl StatementCodegen for FunctionDefinition {
 
         compiler.builder.position_at_end(basic_block);
 
-        // let parameters_codegen_type = self
-        //     .parameters
-        //     .iter()
-        //     .map(|parameter| parameter.ty.kind.to_codegen_type(&compiler.symbol_table)?)
-        //     .collect::<Vec<_>>();
         let mut parameters_codegen_type = Vec::new();
 
         for parameter in self.parameters.clone() {
-            let ty = parameter.ty.kind.to_codegen_type(&compiler.symbol_table)?;
-            parameters_codegen_type.push(ty);
+            parameters_codegen_type
+                .push(parameter.ty.kind.to_codegen_type(&compiler.symbol_table)?);
         }
 
         compiler.symbol_table.insert_function(
@@ -180,14 +176,8 @@ impl StatementCodegen for FunctionDefinition {
 #[derive(Debug, Clone)]
 pub struct ExternalFunctionDeclaration {
     pub name: Identifier,
-    pub parameters: Vec<ExternalFunctionParameter>,
+    pub parameters: Vec<AstType>,
     pub return_type: AstType,
-    pub position: Position,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExternalFunctionParameter {
-    pub ty: AstType,
     pub position: Position,
 }
 
@@ -196,8 +186,13 @@ impl StatementCodegen for ExternalFunctionDeclaration {
         let mut parameters = Vec::new();
 
         for parameter in self.parameters.clone() {
-            let ty = parameter.ty.kind.to_codegen_type(&compiler.symbol_table)?;
-            parameters.push(ty.to_llvm_type(compiler.context).into());
+            parameters.push(
+                parameter
+                    .kind
+                    .to_codegen_type(&compiler.symbol_table)?
+                    .to_llvm_type(compiler.context)
+                    .into(),
+            );
         }
 
         let return_type = self
@@ -216,8 +211,7 @@ impl StatementCodegen for ExternalFunctionDeclaration {
         let mut parameters_codegen_type = Vec::new();
 
         for parameter in self.parameters.clone() {
-            let ty = parameter.ty.kind.to_codegen_type(&compiler.symbol_table)?;
-            parameters_codegen_type.push(ty);
+            parameters_codegen_type.push(parameter.kind.to_codegen_type(&compiler.symbol_table)?);
         }
 
         compiler.symbol_table.insert_function(

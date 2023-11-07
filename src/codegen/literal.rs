@@ -32,6 +32,22 @@ impl ExpressionCodegen for Literal {
     }
 }
 
+impl From<Literal> for Position {
+    fn from(literal: Literal) -> Self {
+        macro_rules! inner {
+            ($($ident:ident)*) => {
+                match literal {
+                    $(
+                        Literal::$ident(literal) => literal.position,
+                    )*
+                }
+            };
+        }
+
+        inner! { Identifier Int Float Boolean String Array Struct }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Identifier {
     pub identifier: String,
@@ -136,25 +152,27 @@ impl ExpressionCodegen for StringLiteral {
 
 #[derive(Debug, Clone)]
 pub struct ArrayLiteral {
-    pub elements: Vec<Element>,
-    pub position: Position,
-}
-
-#[derive(Debug, Clone)]
-pub struct Element {
-    pub value: Expression,
+    pub elements: Vec<Expression>,
     pub position: Position,
 }
 
 impl ExpressionCodegen for ArrayLiteral {
     fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
-        let mut values: Vec<BasicValueEnum> = Vec::new();
+        let mut values = Vec::new();
         let mut element_type = None;
 
         for val in self.elements.clone() {
-            let value = val.value.codegen(compiler)?;
+            let value = val.codegen(compiler)?;
             values.push(value.llvm_value);
-            element_type = Some(value.ty);
+
+            match element_type.clone() {
+                Some(ty) => {
+                    if ty != value.ty {
+                        return Err(CompileError::type_mismatch(ty, value.ty, val.into()));
+                    }
+                }
+                None => element_type = Some(value.ty),
+            }
         }
 
         let array_type = match element_type {
@@ -201,13 +219,7 @@ impl ExpressionCodegen for ArrayLiteral {
 #[derive(Debug, Clone)]
 pub struct StructLiteral {
     pub name: Identifier,
-    pub fields: BTreeMap<String, Field>,
-    pub position: Position,
-}
-
-#[derive(Debug, Clone)]
-pub struct Field {
-    pub value: Expression,
+    pub fields: BTreeMap<String, Expression>,
     pub position: Position,
 }
 
@@ -229,7 +241,7 @@ impl ExpressionCodegen for StructLiteral {
         let mut feilds_type = BTreeMap::new();
 
         for (i, val) in self.fields.iter().enumerate() {
-            let value = val.1.value.codegen(compiler)?;
+            let value = val.1.codegen(compiler)?;
             values.push(value.llvm_value);
 
             let field_type = match struct_type.fields.get(val.0) {
@@ -241,7 +253,7 @@ impl ExpressionCodegen for StructLiteral {
                 return Err(CompileError::type_mismatch(
                     field_type,
                     value.ty,
-                    self.position,
+                    val.1.clone().into(),
                 ));
             }
 

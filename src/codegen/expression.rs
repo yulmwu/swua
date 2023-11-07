@@ -34,6 +34,23 @@ impl ExpressionCodegen for Expression {
     }
 }
 
+impl From<Expression> for Position {
+    fn from(expression: Expression) -> Self {
+        macro_rules! inner {
+            ($($ident:ident)*) => {
+                match expression {
+                    Expression::Literal(literal) => Position::from(literal),
+                    $(
+                        Expression::$ident(expression) => expression.position,
+                    )*
+                }
+            };
+        }
+
+        inner! { Binary Unary Assign Block If Call Index Typeof Sizeof }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BinaryExpression {
     pub left: Box<Expression>,
@@ -358,13 +375,7 @@ impl ExpressionCodegen for IfExpression {
 #[derive(Debug, Clone)]
 pub struct CallExpression {
     pub function: Box<Expression>,
-    pub arguments: Vec<Argument>,
-    pub position: Position,
-}
-
-#[derive(Debug, Clone)]
-pub struct Argument {
-    pub value: Expression,
+    pub arguments: Vec<Expression>,
     pub position: Position,
 }
 
@@ -396,10 +407,28 @@ impl ExpressionCodegen for CallExpression {
             _ => return Err(CompileError::expected("identifier", self.position)),
         };
 
+        if self.arguments.len() != entry.1.parameters.len() {
+            return Err(CompileError::wrong_number_of_arguments(
+                entry.1.parameters.len(),
+                self.arguments.len(),
+                self.position,
+            ));
+        }
+
         let mut arguments: Vec<BasicMetadataValueEnum> = Vec::new();
 
         for argument in self.arguments.clone() {
-            arguments.push(argument.value.codegen(compiler)?.llvm_value.into());
+            let value = argument.codegen(compiler)?;
+            arguments.push(value.llvm_value.into());
+
+            let paramter_ty = entry.1.parameters[arguments.len() - 1].clone();
+            if value.ty != paramter_ty {
+                return Err(CompileError::type_mismatch(
+                    paramter_ty,
+                    value.ty,
+                    argument.into(),
+                ));
+            }
         }
 
         Ok(
