@@ -66,9 +66,12 @@ impl StatementCodegen for LetStatement {
         );
 
         compiler.builder.build_store(alloca, value.llvm_value);
-        compiler
-            .symbol_table
-            .insert_variable(self.name.identifier.clone(), value.ty, alloca);
+        compiler.symbol_table.insert_variable(
+            self.name.identifier.clone(),
+            value.ty,
+            alloca,
+            self.name.position,
+        )?;
 
         Ok(())
     }
@@ -137,23 +140,25 @@ impl StatementCodegen for FunctionDefinition {
                 return_type: Box::new(return_type),
                 position: self.position,
             },
-        );
+        )?;
 
         let original_symbol_table = compiler.symbol_table.clone();
         compiler.symbol_table = SymbolTable::new_with_parent(compiler.symbol_table.clone());
 
         for (i, parameter) in function.get_param_iter().enumerate() {
+            let parameter_name = self.parameters[i].name.clone();
             let alloca = compiler.builder.build_alloca(
                 compiler.context.i64_type(),
-                format!("arg.{}", self.parameters[i].name.identifier).as_str(),
+                format!("arg.{}", parameter_name.identifier).as_str(),
             );
             compiler.builder.build_store(alloca, parameter);
 
             compiler.symbol_table.insert_variable(
-                self.parameters[i].name.identifier.clone(),
+                parameter_name.identifier.clone(),
                 parameters_codegen_type[i].clone(),
                 alloca,
-            );
+                parameter_name.position,
+            )?;
         }
 
         for statement in self.body.statements.clone() {
@@ -223,7 +228,7 @@ impl StatementCodegen for ExternalFunctionDeclaration {
                 return_type: Box::new(return_type),
                 position: self.position,
             },
-        );
+        )?;
 
         Ok(())
     }
@@ -278,7 +283,7 @@ impl StatementCodegen for StructDeclaration {
             self.name.identifier.clone(),
             struct_llvm_type,
             struct_type,
-        );
+        )?;
 
         Ok(())
     }

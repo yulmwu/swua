@@ -460,19 +460,20 @@ impl ExpressionCodegen for IndexExpression {
         let left = self.left.codegen(compiler)?;
         let index = self.index.codegen(compiler)?;
 
-        Ok(match index.ty {
-            CodegenType::Int => {
-                let element_ty = match left.ty {
-                    CodegenType::Array(array_type) => *array_type.ty,
-                    _ => unreachable!(),
+        Ok(match left.ty {
+            CodegenType::Array(element_ty) => {
+                let index = match index.ty {
+                    CodegenType::Int => index.llvm_value.into_int_value(),
+                    _ => return Err(CompileError::expected("int", self.position)),
                 };
+                let element_ty = CodegenType::Array(element_ty);
                 let element_ll_ty = element_ty.to_llvm_type(compiler.context);
 
                 let ptr = unsafe {
                     compiler.builder.build_gep(
                         element_ll_ty,
                         left.llvm_value.into_pointer_value(),
-                        &[index.llvm_value.into_int_value()],
+                        &[index],
                         "ptr_array_index",
                     )
                 };
@@ -484,7 +485,11 @@ impl ExpressionCodegen for IndexExpression {
                     element_ty,
                 )
             }
-            _ => return Err(CompileError::unknown_type(index.ty, self.position)),
+            _ => {
+                return Err(CompileError::type_that_cannot_be_indexed(
+                    (*self.left.clone()).into(),
+                ))
+            }
         })
     }
 }
