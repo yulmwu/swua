@@ -13,6 +13,7 @@ fn compile<'a>(context: &'a Context, source_code: &str) -> CompileResult<Module<
     let program = Parser::new(Lexer::new(source_code))
         .parse_program()
         .map_err(|err| CompileError::from(err[0].clone()))?;
+    // println!("{}", program);
     program.codegen(context, SymbolTable::default())
 }
 
@@ -42,6 +43,12 @@ pub struct Cli {
     pub subcommand: SubCommand,
     #[clap(short, long, help = "Print LLVM IR")]
     pub llvm_ir: bool,
+    #[clap(short, long, help = "JIT Optimization level (0-3)")]
+    pub optimization_level: Option<u8>,
+    #[clap(short, long, help = "LLVM Module name")]
+    pub name: Option<String>,
+    #[clap(long, help = "Don't print verbose information")]
+    pub no_verbose: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -53,16 +60,12 @@ pub enum SubCommand {
         #[clap(short, long)]
         output: PathBuf,
     },
-    #[clap(name = "run", about = "Jit compile and run Swua source code")]
+    #[clap(name = "run", about = "JIT compile and run Swua source code")]
     Run {
         #[clap(short, long)]
         input: PathBuf,
     },
 }
-
-// TODO
-const NAME: &str = "main";
-const OPTIMIZATION_LEVEL: OptimizationLevel = OptimizationLevel::None;
 
 fn display_optimization_level(level: OptimizationLevel) -> &'static str {
     match level {
@@ -75,15 +78,38 @@ fn display_optimization_level(level: OptimizationLevel) -> &'static str {
 
 fn main() {
     let cli = Cli::parse();
+    let optimization_level = match cli.optimization_level.unwrap_or(0) {
+        0 => OptimizationLevel::None,
+        1 => OptimizationLevel::Less,
+        2 => OptimizationLevel::Default,
+        3 => OptimizationLevel::Aggressive,
+        _ => {
+            eprintln!(
+                "{}",
+                "Error: Optimization level must be between 0 and 3".red()
+            );
+            return;
+        }
+    };
+    let llvm_module_name = cli.name.unwrap_or_else(|| "main".to_string());
 
     match cli.subcommand {
         SubCommand::Compile { input, output } => {
+            if !cli.no_verbose {
+                println!(
+                    "{} {} [{}]",
+                    "Compiling".green().bold(),
+                    input.display(),
+                    display_optimization_level(optimization_level)
+                );
+            }
+
             let source_code = fs::read_to_string(input.clone()).unwrap();
             let context = Context::create();
             let module = match compile(&context, &source_code) {
                 Ok(module) => module,
                 Err(err) => {
-                    compile_error(err, NAME, input.to_str().unwrap(), source_code);
+                    compile_error(err, &llvm_module_name, input.to_str().unwrap(), source_code);
                     return;
                 }
             };
@@ -94,19 +120,23 @@ fn main() {
 
             fs::write(output.clone(), module.print_to_string().to_string()).unwrap();
 
-            println!(
-                "{}: {}",
-                "Compile Finished".green().bold(),
-                output.display()
-            );
+            if !cli.no_verbose {
+                println!(
+                    "{}: {}",
+                    "Compile Finished".green().bold(),
+                    output.display()
+                );
+            }
         }
         SubCommand::Run { input } => {
-            println!(
-                "{} {} [{}]",
-                "Compiling".green().bold(),
-                input.display(),
-                display_optimization_level(OPTIMIZATION_LEVEL)
-            );
+            if !cli.no_verbose {
+                println!(
+                    "{} {} [{}]",
+                    "Compiling".green().bold(),
+                    input.display(),
+                    display_optimization_level(optimization_level)
+                );
+            }
 
             let now = Instant::now();
 
@@ -115,16 +145,18 @@ fn main() {
             let module = match compile(&context, &source_code) {
                 Ok(module) => module,
                 Err(err) => {
-                    compile_error(err, NAME, input.to_str().unwrap(), source_code);
+                    compile_error(err, &llvm_module_name, input.to_str().unwrap(), source_code);
                     return;
                 }
             };
 
-            println!(
-                "{} in {} ms",
-                "  Compile Finished".green().bold(),
-                now.elapsed().as_millis()
-            );
+            if !cli.no_verbose {
+                println!(
+                    "{} in {} ms",
+                    "  Compile Finished".green().bold(),
+                    now.elapsed().as_millis()
+                );
+            }
             let now = Instant::now();
 
             if cli.llvm_ir {
@@ -132,7 +164,7 @@ fn main() {
             }
 
             let engine = module
-                .create_jit_execution_engine(OPTIMIZATION_LEVEL)
+                .create_jit_execution_engine(optimization_level)
                 .unwrap();
 
             type JitMainFunction = unsafe extern "C" fn() -> i64;
@@ -144,15 +176,17 @@ fn main() {
                     .call()
             };
 
-            println!(
-                "{} in {} ms, `main` function returned: {}",
-                "Run Finished".green().bold(),
-                now.elapsed().as_millis(),
-                match main_return {
-                    0 => "0".green().bold(),
-                    ret => ret.to_string().red().bold(),
-                }
-            );
+            if !cli.no_verbose {
+                println!(
+                    "{} in {} ms, `main` function returned: {}",
+                    "Run Finished".green().bold(),
+                    now.elapsed().as_millis(),
+                    match main_return {
+                        0 => "0".green().bold(),
+                        ret => ret.to_string().red().bold(),
+                    }
+                );
+            }
         }
     }
 }
