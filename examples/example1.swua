@@ -17,7 +17,9 @@ fn main() -> int {
         data: [foo1, foo2],
         bar: [0, 1, 2, 3, 4, 5]
     };
-    print_array(bar.bar, (sizeof bar.bar) / sizeof bar.bar[0]);
+    let size = sizeof bar.bar;
+    let int_size = sizeof bar.bar[0];
+    print_array(bar.bar, size / int_size);
 
     let a = add(bar.data[0].x, bar.data[bar.bar[1]].x); // 12
     let b = add(bar.data[bar.bar[0]].y, bar.data[bar.bar[1]].y); // 23
