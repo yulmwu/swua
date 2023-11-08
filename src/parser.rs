@@ -181,15 +181,15 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(&mut self) -> ParseResult<Statement> {
         Ok(match self.current_token.kind {
-            TokenKind::Let => Statement::LetStatement(self.parse_let_statement()?),
-            TokenKind::Function => Statement::FunctionDefinition(self.parse_function_definition()?),
+            TokenKind::Let => Statement::Let(self.parse_let_statement()?),
+            TokenKind::Function => Statement::Function(self.parse_function_definition()?),
             TokenKind::Extern => {
-                Statement::ExternalFunctionDeclaration(self.parse_external_function_declaration()?)
+                Statement::ExternalFunction(self.parse_external_function_declaration()?)
             }
             TokenKind::Return => Statement::Return(self.parse_return_statement()?),
-            TokenKind::Type => Statement::TypeDeclaration(self.parse_type_statement()?),
+            TokenKind::Type => Statement::Type(self.parse_type_statement()?),
             TokenKind::Declare => Statement::Declaration(self.parse_declare_statement()?),
-            TokenKind::Struct => Statement::StructDeclaration(self.parse_struct_declaration()?),
+            TokenKind::Struct => Statement::Struct(self.parse_struct_declaration()?),
             _ => self.parse_expression_statement()?,
         })
     }

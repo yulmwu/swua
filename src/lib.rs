@@ -399,7 +399,7 @@ impl Program {
 impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for statement in self.statements.iter() {
-            writeln!(f, "{}", statement)?;
+            statement.display(f, 0)?;
         }
         Ok(())
     }
@@ -496,4 +496,17 @@ pub enum Priority {
     Call,
     Index,
     MemberAccess,
+}
+
+pub trait DisplayNode {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result;
+}
+
+pub mod display {
+    use std::fmt;
+
+    #[inline]
+    pub fn indent(f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        write!(f, "{}", " ".repeat(indent * 4))
+    }
 }
