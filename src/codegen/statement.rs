@@ -1,7 +1,7 @@
 use super::{BlockExpression, CompileError, CompileResult, Expression, Identifier};
 use crate::{
-    AstType, Compiler, ExpressionCodegen, FunctionType, Position, StatementCodegen, StructType,
-    SymbolTable,
+    display, AstType, Compiler, DisplayNode, ExpressionCodegen, FunctionType, Position,
+    StatementCodegen, StructType, SymbolTable,
 };
 use inkwell::types::BasicType;
 use std::{collections::BTreeMap, fmt};
@@ -9,12 +9,12 @@ use std::{collections::BTreeMap, fmt};
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expression(Expression),
-    LetStatement(LetStatement),
-    FunctionDefinition(FunctionDefinition),
-    ExternalFunctionDeclaration(ExternalFunctionDeclaration),
-    StructDeclaration(StructDeclaration),
+    Let(LetStatement),
+    Function(FunctionDefinition),
+    ExternalFunction(ExternalFunctionDeclaration),
+    Struct(StructDeclaration),
     Return(ReturnStatement),
-    TypeDeclaration(TypeDeclaration),
+    Type(TypeDeclaration),
     Declaration(Declaration),
 }
 
@@ -31,31 +31,35 @@ impl StatementCodegen for Statement {
         }
 
         inner! {
-            Expression LetStatement FunctionDefinition ExternalFunctionDeclaration StructDeclaration Return TypeDeclaration Declaration
+            Expression Let Function ExternalFunction Struct Return Type Declaration
         }
 
         Ok(())
     }
 }
 
-impl fmt::Display for Statement {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayNode for Statement {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         macro_rules! inner {
             ($($ident:ident)*) => {
                 match self {
-                    Statement::Expression(expression) => { write!(f, "{expression};")?; },
+                    Statement::Expression(expression) => {
+                        display::indent(f, indent)?;
+                        expression.display(f, indent)?;
+                        write!(f, ";")?;
+                    },
                     $(
-                        Statement::$ident(statement) => { write!(f, "{statement}")?; },
+                        Statement::$ident(statement) => { statement.display(f, indent)?; },
                     )*
                 }
             };
         }
 
         inner! {
-            LetStatement FunctionDefinition ExternalFunctionDeclaration StructDeclaration Return TypeDeclaration Declaration
+            Let Function ExternalFunction Struct Return Type Declaration
         }
 
-        Ok(())
+        writeln!(f)
     }
 }
 
@@ -98,17 +102,17 @@ impl StatementCodegen for LetStatement {
     }
 }
 
-impl fmt::Display for LetStatement {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayNode for LetStatement {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        display::indent(f, indent)?;
+        write!(f, "let ")?;
+        self.name.display(f, indent)?;
         if let Some(ty) = self.ty.clone() {
-            write!(
-                f,
-                "let {} : {} = {}",
-                self.name.identifier, ty.kind, self.value
-            )
-        } else {
-            write!(f, "let {} = {}", self.name.identifier, self.value)
+            write!(f, ": {}", ty.kind)?;
         }
+        write!(f, " = ")?;
+        self.value.display(f, indent)?;
+        write!(f, ";")
     }
 }
 
@@ -213,20 +217,21 @@ impl StatementCodegen for FunctionDefinition {
     }
 }
 
-impl fmt::Display for FunctionDefinition {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "fn {}({}) -> {} {}",
-            self.name.identifier,
-            self.parameters
-                .iter()
-                .map(|parameter| format!("{}: {}", parameter.name.identifier, parameter.ty.kind))
-                .collect::<Vec<_>>()
-                .join(", "),
-            self.return_type.kind,
-            self.body
-        )
+impl DisplayNode for FunctionDefinition {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        display::indent(f, indent)?;
+        write!(f, "fn ")?;
+        self.name.display(f, indent)?;
+        write!(f, "(")?;
+        for (i, parameter) in self.parameters.iter().enumerate() {
+            parameter.name.display(f, indent)?;
+            write!(f, ": {}", parameter.ty.kind)?;
+            if i != self.parameters.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, ") -> {} ", self.return_type.kind)?;
+        self.body.display(f, indent)
     }
 }
 
@@ -286,19 +291,19 @@ impl StatementCodegen for ExternalFunctionDeclaration {
     }
 }
 
-impl fmt::Display for ExternalFunctionDeclaration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "extern fn {}({}) -> {}",
-            self.name.identifier,
-            self.parameters
-                .iter()
-                .map(|parameter| format!("{}", parameter.kind))
-                .collect::<Vec<_>>()
-                .join(", "),
-            self.return_type.kind
-        )
+impl DisplayNode for ExternalFunctionDeclaration {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        display::indent(f, indent)?;
+        write!(f, "extern fn ")?;
+        self.name.display(f, indent)?;
+        write!(f, "(")?;
+        for (i, parameter) in self.parameters.iter().enumerate() {
+            write!(f, "{}", parameter.kind)?;
+            if i != self.parameters.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, ") -> {};", self.return_type.kind)
     }
 }
 
@@ -348,18 +353,23 @@ impl StatementCodegen for StructDeclaration {
     }
 }
 
-impl fmt::Display for StructDeclaration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "struct {} {{ {} }}",
-            self.name.identifier,
-            self.fields
-                .iter()
-                .map(|(name, ty)| format!("{}: {}", name, ty.kind))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
+impl DisplayNode for StructDeclaration {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        display::indent(f, indent)?;
+        write!(f, "struct ")?;
+        self.name.display(f, indent)?;
+        write!(f, " {{ ")?;
+        for (i, (name, ty)) in self.fields.iter().enumerate() {
+            writeln!(f)?;
+            display::indent(f, indent + 1)?;
+            write!(f, "{}: {}", name, ty.kind)?;
+            if i != self.fields.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        writeln!(f)?;
+        display::indent(f, indent)?;
+        write!(f, "}};")
     }
 }
 
@@ -378,9 +388,12 @@ impl StatementCodegen for ReturnStatement {
     }
 }
 
-impl fmt::Display for ReturnStatement {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "return {};", self.value)
+impl DisplayNode for ReturnStatement {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        display::indent(f, indent)?;
+        write!(f, "return ")?;
+        self.value.display(f, indent)?;
+        write!(f, ";")
     }
 }
 
@@ -397,9 +410,11 @@ impl StatementCodegen for TypeDeclaration {
     }
 }
 
-impl fmt::Display for TypeDeclaration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "type {} = {};", self.name.identifier, self.ty.kind)
+impl DisplayNode for TypeDeclaration {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        display::indent(f, indent)?;
+        self.name.display(f, indent)?;
+        write!(f, " = {}", self.ty.kind)
     }
 }
 
@@ -416,8 +431,10 @@ impl StatementCodegen for Declaration {
     }
 }
 
-impl fmt::Display for Declaration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "declare {} = {};", self.name.identifier, self.ty.kind)
+impl DisplayNode for Declaration {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        display::indent(f, indent)?;
+        self.name.display(f, indent)?;
+        write!(f, " = {}", self.ty.kind)
     }
 }

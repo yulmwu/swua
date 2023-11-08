@@ -1,5 +1,8 @@
 use super::{CompileError, CompileResult, Expression};
-use crate::{ArrayType, CodegenType, Compiler, ExpressionCodegen, Position, StructType, Value};
+use crate::{
+    display, ArrayType, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Position,
+    StructType, Value,
+};
 use inkwell::{
     types::BasicType,
     values::{BasicValue, BasicValueEnum},
@@ -48,13 +51,13 @@ impl From<Literal> for Position {
     }
 }
 
-impl fmt::Display for Literal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayNode for Literal {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         macro_rules! inner {
             ($($ident:ident)*) => {
                 match self {
                     $(
-                        Literal::$ident(literal) => write!(f, "{literal}"),
+                        Literal::$ident(literal) => literal.display(f, indent),
                     )*
                 }
             };
@@ -94,8 +97,8 @@ impl ExpressionCodegen for Identifier {
     }
 }
 
-impl fmt::Display for Identifier {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayNode for Identifier {
+    fn display(&self, f: &mut fmt::Formatter<'_>, _: usize) -> fmt::Result {
         write!(f, "{}", self.identifier)
     }
 }
@@ -119,8 +122,8 @@ impl ExpressionCodegen for IntLiteral {
     }
 }
 
-impl fmt::Display for IntLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayNode for IntLiteral {
+    fn display(&self, f: &mut fmt::Formatter<'_>, _: usize) -> fmt::Result {
         write!(f, "{}", self.value)
     }
 }
@@ -140,8 +143,8 @@ impl ExpressionCodegen for FloatLiteral {
     }
 }
 
-impl fmt::Display for FloatLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayNode for FloatLiteral {
+    fn display(&self, f: &mut fmt::Formatter<'_>, _: usize) -> fmt::Result {
         write!(f, "{}", self.value)
     }
 }
@@ -165,8 +168,8 @@ impl ExpressionCodegen for BooleanLiteral {
     }
 }
 
-impl fmt::Display for BooleanLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayNode for BooleanLiteral {
+    fn display(&self, f: &mut fmt::Formatter<'_>, _: usize) -> fmt::Result {
         write!(f, "{}", self.value)
     }
 }
@@ -190,8 +193,8 @@ impl ExpressionCodegen for StringLiteral {
     }
 }
 
-impl fmt::Display for StringLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayNode for StringLiteral {
+    fn display(&self, f: &mut fmt::Formatter<'_>, _: usize) -> fmt::Result {
         write!(f, "\"{}\"", self.value)
     }
 }
@@ -262,14 +265,14 @@ impl ExpressionCodegen for ArrayLiteral {
     }
 }
 
-impl fmt::Display for ArrayLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayNode for ArrayLiteral {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         write!(f, "[")?;
         for (i, val) in self.elements.iter().enumerate() {
             if i != 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{val}")?;
+            val.display(f, indent)?;
         }
         write!(f, "]")
     }
@@ -359,15 +362,20 @@ impl ExpressionCodegen for StructLiteral {
     }
 }
 
-impl fmt::Display for StructLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {{", self.name)?;
+impl DisplayNode for StructLiteral {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        write!(f, "struct {} {{", self.name.identifier)?;
         for (i, val) in self.fields.iter().enumerate() {
-            if i != 0 {
-                write!(f, ", ")?;
+            writeln!(f)?;
+            display::indent(f, indent + 1)?;
+            write!(f, "{}: ", val.0)?;
+            val.1.display(f, indent + 1)?;
+            if i != self.fields.len() - 1 {
+                write!(f, ",")?;
             }
-            write!(f, "{}: {}", val.0, val.1)?;
         }
+        writeln!(f)?;
+        display::indent(f, indent)?;
         write!(f, "}}")
     }
 }

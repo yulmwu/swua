@@ -1,7 +1,7 @@
 use super::{CompileError, CompileResult, Identifier, Literal, Statement};
 use crate::{
-    BinaryOperator, CodegenType, Compiler, ExpressionCodegen, Position, StatementCodegen,
-    SymbolTable, UnaryOperator, Value,
+    display, BinaryOperator, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Position,
+    StatementCodegen, SymbolTable, UnaryOperator, Value,
 };
 use inkwell::values::{BasicMetadataValueEnum, BasicValue};
 use std::fmt;
@@ -52,13 +52,13 @@ impl From<Expression> for Position {
     }
 }
 
-impl fmt::Display for Expression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl DisplayNode for Expression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         macro_rules! inner {
             ($($ident:ident)*) => {
                 match self {
                     $(
-                        Expression::$ident(expression) => write!(f, "{expression}"),
+                        Expression::$ident(expression) => expression.display(f, indent),
                     )*
                 }
             };
@@ -209,9 +209,14 @@ impl BinaryExpression {
     }
 }
 
-impl fmt::Display for BinaryExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {} {}", self.left, self.operator, self.right)
+impl DisplayNode for BinaryExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        self.left.display(f, indent)?;
+        match self.operator.clone() {
+            BinaryOperator::Dot => write!(f, ".")?,
+            operator => write!(f, " {} ", operator)?,
+        }
+        self.right.display(f, indent)
     }
 }
 
@@ -266,9 +271,10 @@ impl UnaryExpression {
     }
 }
 
-impl fmt::Display for UnaryExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}", self.operator, self.expression)
+impl DisplayNode for UnaryExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        write!(f, "{}", self.operator)?;
+        self.expression.display(f, indent)
     }
 }
 
@@ -300,9 +306,11 @@ impl ExpressionCodegen for AssignExpression {
     }
 }
 
-impl fmt::Display for AssignExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} = {}", self.name, self.value)
+impl DisplayNode for AssignExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        self.name.display(f, indent)?;
+        write!(f, " = ")?;
+        self.value.display(f, indent)
     }
 }
 
@@ -336,13 +344,14 @@ impl ExpressionCodegen for BlockExpression {
     }
 }
 
-impl fmt::Display for BlockExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut statements = String::new();
+impl DisplayNode for BlockExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        writeln!(f, "{{")?;
         for statement in self.statements.clone() {
-            statements.push_str(format!("{}\n", statement).as_str());
+            statement.display(f, indent + 1)?;
         }
-        write!(f, "{{\n{}\n}}", statements)
+        display::indent(f, indent)?;
+        write!(f, "}}")
     }
 }
 
@@ -420,16 +429,17 @@ impl ExpressionCodegen for IfExpression {
     }
 }
 
-impl fmt::Display for IfExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.alternative.clone() {
-            Some(alternative) => write!(
-                f,
-                "if {} {} else {}",
-                self.condition, self.consequence, alternative
-            ),
-            None => write!(f, "if {} {}", self.condition, self.consequence),
+impl DisplayNode for IfExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        write!(f, "if ")?;
+        self.condition.display(f, indent)?;
+        write!(f, " ")?;
+        self.consequence.display(f, indent)?;
+        if let Some(alternative) = self.alternative.clone() {
+            write!(f, " else ")?;
+            alternative.display(f, indent)?;
         }
+        Ok(())
     }
 }
 
@@ -509,13 +519,17 @@ impl ExpressionCodegen for CallExpression {
     }
 }
 
-impl fmt::Display for CallExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut arguments = String::new();
-        for argument in self.arguments.clone() {
-            arguments.push_str(format!("{argument}, ").as_str());
+impl DisplayNode for CallExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        self.function.display(f, indent)?;
+        write!(f, "(")?;
+        for (i, argument) in self.arguments.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            argument.display(f, indent)?;
         }
-        write!(f, "{}({arguments})", self.function)
+        write!(f, ")")
     }
 }
 
@@ -564,9 +578,12 @@ impl ExpressionCodegen for IndexExpression {
     }
 }
 
-impl fmt::Display for IndexExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}[{}]", self.left, self.index)
+impl DisplayNode for IndexExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        self.left.display(f, indent)?;
+        write!(f, "[")?;
+        self.index.display(f, indent)?;
+        write!(f, "]")
     }
 }
 
@@ -604,9 +621,10 @@ impl ExpressionCodegen for TypeofExpression {
     }
 }
 
-impl fmt::Display for TypeofExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "typeof {}", self.expression)
+impl DisplayNode for TypeofExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        write!(f, "typeof ")?;
+        self.expression.display(f, indent)
     }
 }
 
@@ -641,8 +659,9 @@ impl ExpressionCodegen for SizeofExpression {
     }
 }
 
-impl fmt::Display for SizeofExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "sizeof {}", self.expression)
+impl DisplayNode for SizeofExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        write!(f, "sizeof ")?;
+        self.expression.display(f, indent)
     }
 }
