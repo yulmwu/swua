@@ -38,11 +38,12 @@ Options:
   -h, --help                                     Print help
   -V, --version                                  Print version
 
-$ swua -n hello build -i ./examples/hello_world.swua -l -a 
+$ swua -n hello build -i ./examples/hello_world.swua -l -a
 Compiling ./examples/hello_world.swua (hello) [Unoptimized, Target: aarch64-apple-darwin]
 Build Finished in 193 ms, output: ./build/hello
 
 $ ./build/hello
+Hello, World!
 ```
 
 # Syntax
@@ -67,19 +68,17 @@ See [examples](./examples) for more details.
 
 -   LLVM Version: 16.0.0
 
--   [x] Frontend `*`
+-   [x] Frontend
     -   [x] Lexer
     -   [x] Parser
     -   [x] AST
     -   [x] Type Checker (Semantic Analysis)
--   [x] Backend `*`
+-   [x] Backend (WIP)
     -   [ ] Optimizer
     -   [x] LLVM IR Generator
--   [ ] Standard Library
+-   [ ] Standard Library (WIP)
 -   [ ] Documentation
 -   [ ] More examples
 -   [ ] More tests
-
-`*`: WIP
 
 ... and more
