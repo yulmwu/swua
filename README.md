@@ -14,6 +14,7 @@ graph LR
     I[Linking Standard Library] --> H
     I --> K
     H --> J[Object File]
+    J --> L[Executable File]
 ```
 
 # Build and Usage
@@ -25,21 +26,23 @@ $ swua --help
 Usage: swua [OPTIONS] <COMMAND>
 
 Commands:
-  compile  Compile Swua source code
-  run      JIT compile and run Swua source code
-  help     Print this message or the help of the given subcommand(s)
+  run    JIT compile and run Swua source code
+  build  Compile Swua source code to native code
+  help   Print this message or the help of the given subcommand(s)
 
 Options:
-  -l, --llvm-ir                                  Print LLVM IR
-  -o, --optimization-level <OPTIMIZATION_LEVEL>  JIT Optimization level (0-3)
-  -n, --name <NAME>                              LLVM Module name
+  -o, --optimization-level <OPTIMIZATION_LEVEL>  Optimization level (0-3, default: 0)
+      --output-dir <OUTPUT_DIR>                  Build output directory (default: ./build)
+  -n, --name <NAME>                              Binary name (default: main)
       --no-verbose                               Don't print verbose information
   -h, --help                                     Print help
   -V, --version                                  Print version
 
-$ swua compile -i ./examples/test.swua -o ./build/main.ll
-$ clang ./build/main.ll -L ./build -l swua -o ./build/main
-$ ./build/main
+$ swua -n hello build -i ./examples/hello_world.swua -l -a 
+Compiling ./examples/hello_world.swua (hello) [Unoptimized, Target: aarch64-apple-darwin]
+Build Finished in 193 ms, output: ./build/hello
+
+$ ./build/hello
 ```
 
 # Syntax
