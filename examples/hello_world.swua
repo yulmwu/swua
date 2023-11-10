@@ -1,0 +1,7 @@
+extern fn print_str(string) -> string;
+extern fn concat_str(string, string) -> string;
+
+fn main() -> int {
+    print_str(concat_str("Hello, ", "World!"));
+    return 0;
+}
