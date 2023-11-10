@@ -7,6 +7,7 @@ use inkwell::{
     builder::Builder,
     context::Context,
     module::Module,
+    targets::TargetTriple,
     types::{self, BasicType, BasicTypeEnum},
     values::{BasicValueEnum, IntValue, PointerValue},
     AddressSpace,
@@ -377,8 +378,11 @@ impl Program {
         &self,
         context: &'a Context,
         symbol_table: SymbolTable<'a>,
+        triple: &TargetTriple,
+        name: &str,
     ) -> CompileResult<Module<'a>> {
-        let module = context.create_module("main");
+        let module = context.create_module(name);
+        module.set_triple(triple);
         let builder = context.create_builder();
 
         let mut compiler = Compiler {

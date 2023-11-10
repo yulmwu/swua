@@ -1,7 +1,18 @@
 use clap::{Parser as ClapParser, Subcommand};
 use colored::Colorize;
-use inkwell::{context::Context, module::Module, OptimizationLevel};
-use std::{fs, path::PathBuf, time::Instant};
+use guess_host_triple::guess_host_triple;
+use inkwell::{
+    context::Context,
+    module::Module,
+    targets::{CodeModel, FileType, RelocMode, Target, TargetTriple},
+    OptimizationLevel,
+};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::{exit, Command},
+    time::Instant,
+};
 use swua::{
     codegen::{CompileError, CompileResult},
     parser::Parser,
@@ -9,12 +20,17 @@ use swua::{
     SymbolTable,
 };
 
-fn compile<'a>(context: &'a Context, source_code: &str) -> CompileResult<Module<'a>> {
+fn compile<'a>(
+    context: &'a Context,
+    source_code: &str,
+    triple: &TargetTriple,
+    name: &str,
+) -> CompileResult<Module<'a>> {
     let program = Parser::new(Lexer::new(source_code))
         .parse_program()
         .map_err(|err| CompileError::from(err[0].clone()))?;
     // println!("{}", program);
-    program.codegen(context, SymbolTable::default())
+    program.codegen(context, SymbolTable::default(), triple, name)
 }
 
 fn compile_error(err: CompileError, name: &str, filename: &str, file_content: String) {
@@ -41,11 +57,11 @@ fn compile_error(err: CompileError, name: &str, filename: &str, file_content: St
 pub struct Cli {
     #[clap(subcommand)]
     pub subcommand: SubCommand,
-    #[clap(short, long, help = "Print LLVM IR")]
-    pub llvm_ir: bool,
-    #[clap(short, long, help = "JIT Optimization level (0-3)")]
+    #[clap(short, long, help = "Optimization level (0-3, default: 0)")]
     pub optimization_level: Option<u8>,
-    #[clap(short, long, help = "LLVM Module name")]
+    #[clap(long, help = "Build output directory (default: ./build)")]
+    pub output_dir: Option<PathBuf>,
+    #[clap(short, long, help = "Binary name (default: main)")]
     pub name: Option<String>,
     #[clap(long, help = "Don't print verbose information")]
     pub no_verbose: bool,
@@ -53,17 +69,19 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum SubCommand {
-    #[clap(name = "compile", about = "Compile Swua source code")]
-    Compile {
-        #[clap(short, long)]
-        input: PathBuf,
-        #[clap(short, long)]
-        output: PathBuf,
-    },
     #[clap(name = "run", about = "JIT compile and run Swua source code")]
     Run {
         #[clap(short, long)]
         input: PathBuf,
+    },
+    #[clap(name = "build", about = "Compile Swua source code to native code")]
+    Build {
+        #[clap(short, long)]
+        input: PathBuf,
+        #[clap(short, long, help = "Create LLVM IR file")]
+        llvm_ir: bool,
+        #[clap(short, long, help = "Create ASM file")]
+        asm: bool,
     },
 }
 
@@ -88,50 +106,23 @@ fn main() {
                 "{}",
                 "Error: Optimization level must be between 0 and 3".red()
             );
-            return;
+            exit(1);
         }
     };
-    let llvm_module_name = cli.name.unwrap_or_else(|| "main".to_string());
+    let name = cli.name.unwrap_or_else(|| "main".to_string());
+    let output_dir = cli.output_dir.unwrap_or_else(|| PathBuf::from("./build"));
+
+    let triple = guess_host_triple().unwrap_or_else(|| {
+        eprintln!("{}", "Error: Unknown target triple".red().bold());
+        exit(1);
+    });
+    let target_triple = TargetTriple::create(triple);
 
     match cli.subcommand {
-        SubCommand::Compile { input, output } => {
-            if !cli.no_verbose {
-                println!(
-                    "{} {} [{}]",
-                    "Compiling".green().bold(),
-                    input.display(),
-                    display_optimization_level(optimization_level)
-                );
-            }
-
-            let source_code = fs::read_to_string(input.clone()).unwrap();
-            let context = Context::create();
-            let module = match compile(&context, &source_code) {
-                Ok(module) => module,
-                Err(err) => {
-                    compile_error(err, &llvm_module_name, input.to_str().unwrap(), source_code);
-                    return;
-                }
-            };
-
-            if cli.llvm_ir {
-                println!("{}", module.print_to_string().to_string());
-            }
-
-            fs::write(output.clone(), module.print_to_string().to_string()).unwrap();
-
-            if !cli.no_verbose {
-                println!(
-                    "{}: {}",
-                    "Compile Finished".green().bold(),
-                    output.display()
-                );
-            }
-        }
         SubCommand::Run { input } => {
             if !cli.no_verbose {
                 println!(
-                    "{} {} [{}]",
+                    "{} {} ({name}) [{}]",
                     "Compiling".green().bold(),
                     input.display(),
                     display_optimization_level(optimization_level)
@@ -142,26 +133,22 @@ fn main() {
 
             let source_code = fs::read_to_string(input.clone()).unwrap();
             let context = Context::create();
-            let module = match compile(&context, &source_code) {
+            let module = match compile(&context, &source_code, &target_triple, &name) {
                 Ok(module) => module,
                 Err(err) => {
-                    compile_error(err, &llvm_module_name, input.to_str().unwrap(), source_code);
-                    return;
+                    compile_error(err, &name, input.to_str().unwrap(), source_code);
+                    exit(1);
                 }
             };
 
             if !cli.no_verbose {
                 println!(
                     "{} in {} ms",
-                    "  Compile Finished".green().bold(),
+                    "Finished".green().bold(),
                     now.elapsed().as_millis()
                 );
             }
             let now = Instant::now();
-
-            if cli.llvm_ir {
-                eprintln!("{}", module.print_to_string().to_string());
-            }
 
             let engine = module
                 .create_jit_execution_engine(optimization_level)
@@ -185,6 +172,112 @@ fn main() {
                         0 => "0".green().bold(),
                         ret => ret.to_string().red().bold(),
                     }
+                );
+            }
+        }
+        SubCommand::Build {
+            input,
+            llvm_ir,
+            asm,
+        } => {
+            if !cli.no_verbose {
+                println!(
+                    "{} {} ({name}) [{}, Target: {}]",
+                    "Compiling".green().bold(),
+                    input.display(),
+                    display_optimization_level(optimization_level),
+                    triple
+                );
+            }
+
+            let now = Instant::now();
+
+            let source_code = fs::read_to_string(input.clone()).unwrap();
+            let context = Context::create();
+            let module = match compile(&context, &source_code, &target_triple, &name) {
+                Ok(module) => module,
+                Err(err) => {
+                    compile_error(err, &name, input.to_str().unwrap(), source_code);
+                    exit(1);
+                }
+            };
+            let output = output_dir.join(name);
+
+            if llvm_ir {
+                fs::write(
+                    output.with_extension("ll"),
+                    module.print_to_string().to_string(),
+                )
+                .unwrap();
+            }
+
+            Target::initialize_all(&Default::default());
+
+            let target = Target::from_triple(&target_triple).unwrap();
+            let target_machine = target
+                .create_target_machine(
+                    &target_triple,
+                    "generic",
+                    "",
+                    optimization_level,
+                    RelocMode::Default,
+                    CodeModel::Default,
+                )
+                .unwrap();
+
+            if asm {
+                target_machine
+                    .write_to_file(
+                        &module,
+                        FileType::Assembly,
+                        Path::new(&output.with_extension("s")),
+                    )
+                    .unwrap();
+            }
+
+            target_machine
+                .write_to_file(
+                    &module,
+                    FileType::Object,
+                    Path::new(&output.with_extension("o")),
+                )
+                .unwrap();
+
+            let command = Command::new("clang")
+                .arg("-o")
+                .arg(output.clone())
+                .arg(output.with_extension("o"))
+                .arg("-L")
+                .arg(output.parent().unwrap())
+                .arg("-l")
+                .arg("swua")
+                .output()
+                .unwrap();
+
+            let exit_code = command.status.code().unwrap();
+            if exit_code != 0 {
+                eprintln!(
+                    "{}",
+                    command
+                        .stderr
+                        .iter()
+                        .map(|&byte| byte as char)
+                        .collect::<String>()
+                        .red()
+                );
+                eprintln!(
+                    "{}",
+                    format!("Error: clang exited with code {}", exit_code).red()
+                );
+                exit(exit_code);
+            }
+
+            if !cli.no_verbose {
+                println!(
+                    "{} in {} ms, output: {}",
+                    "Build Finished".green().bold(),
+                    now.elapsed().as_millis(),
+                    output.display()
                 );
             }
         }
