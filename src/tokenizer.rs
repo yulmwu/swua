@@ -16,11 +16,11 @@ pub enum TokenKind<'a> {
 
     LT, GT, LTE, GTE, EQ, NEQ,
 
-    Let, Function, If, Else, Return, Type, Declare, Struct, Typeof, Sizeof,
+    Let, Function, If, Else, Return, Type, Declare, Struct, While,
 
     IntType, FloatType, StringType, BooleanType,
 
-    Extern,
+    Extern, Typeof, Sizeof,
 }
 
 impl<'a> From<&'a str> for TokenKind<'a> {
@@ -34,8 +34,7 @@ impl<'a> From<&'a str> for TokenKind<'a> {
             "type" => TokenKind::Type,
             "declare" => TokenKind::Declare,
             "struct" => TokenKind::Struct,
-            "typeof" => TokenKind::Typeof,
-            "sizeof" => TokenKind::Sizeof,
+            "while" => TokenKind::While,
             "true" => TokenKind::Boolean(true),
             "false" => TokenKind::Boolean(false),
             "int" => TokenKind::IntType,
@@ -43,6 +42,8 @@ impl<'a> From<&'a str> for TokenKind<'a> {
             "string" => TokenKind::StringType,
             "boolean" => TokenKind::BooleanType,
             "extern" => TokenKind::Extern,
+            "typeof" => TokenKind::Typeof,
+            "sizeof" => TokenKind::Sizeof,
             s => TokenKind::IDENT(s),
         }
     }

@@ -190,6 +190,7 @@ impl<'a> Parser<'a> {
             TokenKind::Type => Statement::Type(self.parse_type_statement()?),
             TokenKind::Declare => Statement::Declaration(self.parse_declare_statement()?),
             TokenKind::Struct => Statement::Struct(self.parse_struct_declaration()?),
+            TokenKind::While => Statement::While(self.parse_while_statement()?),
             _ => self.parse_expression_statement()?,
         })
     }
@@ -450,6 +451,29 @@ impl<'a> Parser<'a> {
                 position: self.position,
             },
             fields,
+            position: self.position,
+        })
+    }
+
+    fn parse_while_statement(&mut self) -> ParseResult<While> {
+        self.next_token();
+
+        let condition = self.parse_expression(&Priority::Lowest)?;
+        self.next_token();
+
+        if self.current_token.kind != TokenKind::LBrace {
+            return Err(ParsingError::expected_next_token(
+                TokenKind::LBrace.to_string(),
+                self.current_token.kind.to_string(),
+                self.position,
+            ));
+        }
+
+        let body = self.parse_block_expression()?;
+
+        Ok(While {
+            condition,
+            body,
             position: self.position,
         })
     }
