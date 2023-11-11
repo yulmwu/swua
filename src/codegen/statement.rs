@@ -1,9 +1,9 @@
 use super::{BlockExpression, CompileError, CompileResult, Expression, Identifier};
 use crate::{
-    display, AstType, Compiler, DisplayNode, ExpressionCodegen, FunctionType, Position,
-    StatementCodegen, StructType, SymbolTable,
+    display, AstType, CodegenType, Compiler, DisplayNode, ExpressionCodegen, FunctionType,
+    Position, StatementCodegen, StructType, SymbolTable,
 };
-use inkwell::types::BasicType;
+use inkwell::{types::BasicType, IntPredicate};
 use std::{collections::BTreeMap, fmt};
 
 #[derive(Debug, Clone)]
@@ -16,6 +16,7 @@ pub enum Statement {
     Return(ReturnStatement),
     Type(TypeDeclaration),
     Declaration(Declaration),
+    While(While),
 }
 
 impl StatementCodegen for Statement {
@@ -31,7 +32,7 @@ impl StatementCodegen for Statement {
         }
 
         inner! {
-            Expression Let Function ExternalFunction Struct Return Type Declaration
+            Expression Let Function ExternalFunction Struct Return Type Declaration While
         }
 
         Ok(())
@@ -56,7 +57,7 @@ impl DisplayNode for Statement {
         }
 
         inner! {
-            Let Function ExternalFunction Struct Return Type Declaration
+            Let Function ExternalFunction Struct Return Type Declaration While
         }
 
         writeln!(f)
@@ -176,7 +177,7 @@ impl StatementCodegen for FunctionDefinition {
             FunctionType {
                 name: self.name.identifier.clone(),
                 parameters: parameters_codegen_type.clone(),
-                return_type: Box::new(return_type),
+                return_type: Box::new(return_type.clone()),
                 position: self.position,
             },
         )?;
@@ -203,12 +204,25 @@ impl StatementCodegen for FunctionDefinition {
         for statement in self.body.statements.clone() {
             if let Statement::Return(return_statement) = statement {
                 let value = return_statement.value.codegen(compiler)?;
+
+                if value.ty != return_type {
+                    return Err(CompileError::type_mismatch(
+                        return_type,
+                        value.ty,
+                        return_statement.value.clone().into(),
+                    ));
+                }
+
                 compiler.builder.build_return(Some(&value.llvm_value));
                 compiler.symbol_table = original_symbol_table;
                 return Ok(());
             }
 
             statement.codegen(compiler)?;
+        }
+
+        if return_type != CodegenType::Void {
+            return Err(CompileError::function_must_return_a_value(self.position));
         }
 
         compiler.symbol_table = original_symbol_table;
@@ -436,5 +450,70 @@ impl DisplayNode for Declaration {
         display::indent(f, indent)?;
         self.name.display(f, indent)?;
         write!(f, " = {}", self.ty.kind)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct While {
+    pub condition: Expression,
+    pub body: BlockExpression,
+    pub position: Position,
+}
+
+impl StatementCodegen for While {
+    fn codegen(&self, compiler: &mut Compiler) -> CompileResult<()> {
+        let function = compiler
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap();
+
+        let condition_block = compiler.context.append_basic_block(function, "while.cond");
+        let body_block = compiler.context.append_basic_block(function, "while.body");
+        let end_block = compiler.context.append_basic_block(function, "while.end");
+
+        compiler.builder.build_unconditional_branch(condition_block);
+
+        compiler.builder.position_at_end(condition_block);
+        let condition = self.condition.codegen(compiler)?;
+        if condition.ty != CodegenType::Boolean {
+            return Err(CompileError::type_mismatch(
+                CodegenType::Boolean,
+                condition.ty,
+                self.condition.clone().into(),
+            ));
+        }
+
+        let condition = compiler.builder.build_int_compare(
+            IntPredicate::NE,
+            condition.llvm_value.into_int_value(),
+            compiler.context.i64_type().const_int(0, false),
+            "while.cond",
+        );
+        compiler
+            .builder
+            .build_conditional_branch(condition, body_block, end_block);
+
+        compiler.builder.position_at_end(body_block);
+        self.body.codegen(compiler)?;
+
+        compiler.builder.build_unconditional_branch(condition_block);
+
+        compiler.builder.position_at_end(end_block);
+
+        Ok(())
+    }
+}
+
+impl DisplayNode for While {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        display::indent(f, indent)?;
+        writeln!(f, "while ")?;
+        self.condition.display(f, indent + 1)?;
+        writeln!(f, " {{")?;
+        self.body.display(f, indent + 1)?;
+        display::indent(f, indent)?;
+        write!(f, "}}")
     }
 }
