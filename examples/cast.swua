@@ -1,0 +1,10 @@
+extern fn print(int) -> int;
+extern fn print_float(float) -> int;
+
+fn main() -> int {
+    print(2.83 as int);
+    print_float(23 as float);
+    print(true as int);
+
+    return 0;
+}
