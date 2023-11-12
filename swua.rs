@@ -7,6 +7,12 @@ pub extern "C" fn print(x: i64) -> i64 {
 }
 
 #[no_mangle]
+pub extern "C" fn print_float(x: f64) -> i64 {
+    println!("{x}");
+    0
+}
+
+#[no_mangle]
 pub extern "C" fn print_str(x: *const i8) -> *const i8 {
     let c_str = unsafe { CStr::from_ptr(x) };
     let str_slice: &str = c_str.to_str().unwrap();

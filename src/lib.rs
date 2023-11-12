@@ -142,6 +142,8 @@ pub enum AstTypeKind {
     String,
     Array(AstArrayTypeKind),
     Named(Identifier),
+    Void,
+    Pointer(Box<AstType>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -158,6 +160,7 @@ impl AstTypeKind {
             AstTypeKind::Float => CodegenType::Float,
             AstTypeKind::Boolean => CodegenType::Boolean,
             AstTypeKind::String => CodegenType::String,
+            AstTypeKind::Void => CodegenType::Void,
             AstTypeKind::Array(array_type) => CodegenType::Array(ArrayType {
                 ty: Box::new(array_type.ty.kind.to_codegen_type(symbol_table)?),
                 len: array_type.len,
@@ -175,6 +178,9 @@ impl AstTypeKind {
                 };
                 CodegenType::Struct(struct_type.1.clone())
             }
+            AstTypeKind::Pointer(ty) => {
+                CodegenType::Pointer(Box::new(ty.kind.to_codegen_type(symbol_table)?))
+            }
         })
     }
 }
@@ -186,6 +192,7 @@ impl fmt::Display for AstTypeKind {
             AstTypeKind::Float => write!(f, "float"),
             AstTypeKind::Boolean => write!(f, "boolean"),
             AstTypeKind::String => write!(f, "string"),
+            AstTypeKind::Void => write!(f, "void"),
             AstTypeKind::Array(array_type) => write!(
                 f,
                 "{}[{}]",
@@ -197,6 +204,7 @@ impl fmt::Display for AstTypeKind {
                 }
             ),
             AstTypeKind::Named(name) => write!(f, "{}", name.identifier),
+            AstTypeKind::Pointer(ty) => write!(f, "ptr {}", ty.kind),
         }
     }
 }
@@ -211,6 +219,7 @@ pub enum CodegenType {
     Struct(StructType),
     Function(FunctionType),
     Void,
+    Pointer(Box<CodegenType>),
 }
 
 #[derive(Debug, Clone)]
@@ -276,6 +285,10 @@ impl CodegenType {
                     .ptr_type(AddressSpace::from(0))
                     .into()
             }
+            CodegenType::Pointer(ty) => ty
+                .to_llvm_type(context)
+                .ptr_type(AddressSpace::from(0))
+                .into(),
             _ => unimplemented!(),
         }
     }
@@ -314,6 +327,7 @@ impl fmt::Display for CodegenType {
                 write!(f, "fn {}", function_type.name)
             }
             CodegenType::Void => write!(f, "void"),
+            CodegenType::Pointer(ty) => write!(f, "ptr {}", ty),
         }
     }
 }
@@ -492,10 +506,12 @@ impl fmt::Display for UnaryOperator {
 #[derive(Debug, Eq, PartialEq, PartialOrd)]
 pub enum Priority {
     Lowest,
+    Assign_,
     Equals,
     LessGreater,
     Sum,
     Product,
+    Cast,
     Prefix,
     Call,
     Index,
