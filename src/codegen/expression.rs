@@ -1,7 +1,7 @@
-use super::{CompileError, CompileResult, Identifier, Literal, Statement};
+use super::{CompileError, CompileResult, Literal, Statement};
 use crate::{
-    display, BinaryOperator, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Position,
-    StatementCodegen, SymbolTable, UnaryOperator, Value,
+    display, AstType, BinaryOperator, CodegenType, Compiler, DisplayNode, ExpressionCodegen,
+    Position, StatementCodegen, SymbolTable, UnaryOperator, Value,
 };
 use inkwell::values::{BasicMetadataValueEnum, BasicValue};
 use std::fmt;
@@ -18,6 +18,9 @@ pub enum Expression {
     Index(IndexExpression),
     Typeof(TypeofExpression),
     Sizeof(SizeofExpression),
+    Cast(CastExpression),
+    Pointer(PointerExpression),
+    Dereference(DereferenceExpression),
 }
 
 impl ExpressionCodegen for Expression {
@@ -31,7 +34,7 @@ impl ExpressionCodegen for Expression {
                 }
             };
         }
-        inner! { Literal Binary Unary Assign Block If Call Index Typeof Sizeof }
+        inner! { Literal Binary Unary Assign Block If Call Index Typeof Sizeof Cast Dereference Pointer }
     }
 }
 
@@ -48,7 +51,7 @@ impl From<Expression> for Position {
             };
         }
 
-        inner! { Binary Unary Assign Block If Call Index Typeof Sizeof }
+        inner! { Binary Unary Assign Block If Call Index Typeof Sizeof Cast Dereference Pointer }
     }
 }
 
@@ -64,7 +67,7 @@ impl DisplayNode for Expression {
             };
         }
 
-        inner! { Literal Binary Unary Assign Block If Call Index Typeof Sizeof }
+        inner! { Literal Binary Unary Assign Block If Call Index Typeof Sizeof Cast Dereference Pointer }
     }
 }
 
@@ -141,12 +144,22 @@ impl BinaryExpression {
 
         let left = match left.ty {
             CodegenType::Int => left.llvm_value.into_int_value(),
-            _ => return Err(CompileError::expected("int", self.position)),
+            _ => {
+                return Err(CompileError::expected(
+                    "int",
+                    Position::from(*self.left.clone()),
+                ))
+            }
         };
 
         let right = match right.ty {
             CodegenType::Int => right.llvm_value.into_int_value(),
-            _ => return Err(CompileError::expected("int", self.position)),
+            _ => {
+                return Err(CompileError::expected(
+                    "int",
+                    Position::from(*self.right.clone()),
+                ))
+            }
         };
 
         use BinaryOperator::*;
@@ -169,12 +182,22 @@ impl BinaryExpression {
 
         let left = match left.ty {
             CodegenType::Int => left.llvm_value.into_int_value(),
-            _ => return Err(CompileError::expected("int", self.position)),
+            _ => {
+                return Err(CompileError::expected(
+                    "int",
+                    Position::from(*self.left.clone()),
+                ))
+            }
         };
 
         let right = match right.ty {
             CodegenType::Int => right.llvm_value.into_int_value(),
-            _ => return Err(CompileError::expected("int", self.position)),
+            _ => {
+                return Err(CompileError::expected(
+                    "int",
+                    Position::from(*self.right.clone()),
+                ))
+            }
         };
 
         use BinaryOperator::*;
@@ -280,7 +303,7 @@ impl DisplayNode for UnaryExpression {
 
 #[derive(Debug, Clone)]
 pub struct AssignExpression {
-    pub name: Identifier,
+    pub expression: Box<Expression>,
     pub value: Box<Expression>,
     pub position: Position,
 }
@@ -289,26 +312,59 @@ impl ExpressionCodegen for AssignExpression {
     fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
         let value = self.value.codegen(compiler)?;
 
-        Ok(
-            match compiler.symbol_table.get_variable(&self.name.identifier) {
-                Some(entry) => {
-                    compiler.builder.build_store(entry.0, value.llvm_value);
-                    value
+        Ok(match *self.expression.clone() {
+            Expression::Literal(Literal::Identifier(identifier)) => {
+                match compiler.symbol_table.get_variable(&identifier.identifier) {
+                    Some(entry) => {
+                        if entry.1 != value.ty {
+                            return Err(CompileError::type_mismatch(
+                                entry.1.clone(),
+                                value.ty,
+                                identifier.position,
+                            ));
+                        }
+
+                        compiler.builder.build_store(entry.0, value.llvm_value);
+                        value
+                    }
+                    None => {
+                        return Err(CompileError::identifier_not_found(
+                            identifier.identifier,
+                            self.position,
+                        ))
+                    }
                 }
-                None => {
-                    return Err(CompileError::identifier_not_found(
-                        self.name.identifier.clone(),
-                        self.position,
-                    ))
+            }
+            Expression::Dereference(dereference) => {
+                let expression = dereference.expression.codegen(compiler)?;
+
+                match expression.ty {
+                    CodegenType::Pointer(ty) => {
+                        if *ty != value.ty {
+                            return Err(CompileError::type_mismatch(
+                                *ty,
+                                value.ty,
+                                dereference.position,
+                            ));
+                        }
+
+                        compiler.builder.build_store(
+                            expression.llvm_value.into_pointer_value(),
+                            value.llvm_value,
+                        );
+                        value
+                    }
+                    _ => return Err(CompileError::expected("pointer", self.position)),
                 }
-            },
-        )
+            }
+            _ => return Err(CompileError::cannot_be_assigned(self.position)),
+        })
     }
 }
 
 impl DisplayNode for AssignExpression {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
-        self.name.display(f, indent)?;
+        self.expression.display(f, indent)?;
         write!(f, " = ")?;
         self.value.display(f, indent)
     }
@@ -608,6 +664,7 @@ impl ExpressionCodegen for TypeofExpression {
             Struct(_) => 5,
             Function(_) => 6,
             Void => 7,
+            Pointer(_) => 8,
         };
 
         Ok(Value::new(
@@ -662,6 +719,235 @@ impl ExpressionCodegen for SizeofExpression {
 impl DisplayNode for SizeofExpression {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         write!(f, "sizeof ")?;
+        self.expression.display(f, indent)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CastExpression {
+    pub expression: Box<Expression>,
+    pub cast_ty: AstType,
+    pub position: Position,
+}
+
+impl ExpressionCodegen for CastExpression {
+    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let value = self.expression.codegen(compiler)?;
+        let ty = self.cast_ty.kind.to_codegen_type(&compiler.symbol_table)?;
+
+        let result = match ty {
+            CodegenType::Int => match value.ty {
+                CodegenType::Float => compiler
+                    .builder
+                    .build_float_to_signed_int(
+                        value.llvm_value.into_float_value(),
+                        compiler.context.i64_type(),
+                        "cast",
+                    )
+                    .as_basic_value_enum(),
+                CodegenType::Boolean => compiler
+                    .builder
+                    .build_int_z_extend(
+                        value.llvm_value.into_int_value(),
+                        compiler.context.i64_type(),
+                        "cast",
+                    )
+                    .as_basic_value_enum(),
+                CodegenType::Pointer(_) => compiler
+                    .builder
+                    .build_ptr_to_int(
+                        value.llvm_value.into_pointer_value(),
+                        compiler.context.i64_type(),
+                        "cast",
+                    )
+                    .as_basic_value_enum(),
+                _ => return Err(CompileError::expected("float", self.position)),
+            },
+            CodegenType::Float => match value.ty {
+                CodegenType::Int => compiler
+                    .builder
+                    .build_signed_int_to_float(
+                        value.llvm_value.into_int_value(),
+                        compiler.context.f64_type(),
+                        "cast",
+                    )
+                    .as_basic_value_enum(),
+                _ => return Err(CompileError::expected("int", self.position)),
+            },
+            CodegenType::Pointer(_) => match value.ty {
+                CodegenType::Int => compiler
+                    .builder
+                    .build_int_to_ptr(
+                        value.llvm_value.into_int_value(),
+                        ty.to_llvm_type(compiler.context).into_pointer_type(),
+                        "cast",
+                    )
+                    .as_basic_value_enum(),
+                _ => return Err(CompileError::expected("int", self.position)),
+            },
+            _ => return Err(CompileError::expected("int or float", self.position)),
+        };
+
+        Ok(Value::new(result, ty))
+    }
+}
+
+impl DisplayNode for CastExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        self.expression.display(f, indent)?;
+        write!(f, " as {}", self.cast_ty.kind)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PointerExpression {
+    pub expression: Box<Expression>,
+    pub position: Position,
+}
+
+impl ExpressionCodegen for PointerExpression {
+    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        match *self.expression.clone() {
+            Expression::Literal(Literal::Identifier(identifier)) => {
+                let value = match compiler.symbol_table.get_variable(&identifier.identifier) {
+                    Some(entry) => entry,
+                    None => {
+                        return Err(CompileError::identifier_not_found(
+                            identifier.identifier,
+                            identifier.position,
+                        ))
+                    }
+                };
+
+                Ok(Value::new(
+                    value.0.as_basic_value_enum(),
+                    CodegenType::Pointer(Box::new(value.1.clone())),
+                ))
+            }
+            Expression::Index(index) => {
+                let value = index.left.codegen(compiler)?;
+                let index = index.index.codegen(compiler)?;
+
+                match value.ty {
+                    CodegenType::Array(array) => {
+                        let index = match index.ty {
+                            CodegenType::Int => index.llvm_value.into_int_value(),
+                            _ => return Err(CompileError::expected("int", self.position)),
+                        };
+                        let element_ll_ty = array.ty.to_llvm_type(compiler.context);
+
+                        let ptr = unsafe {
+                            compiler.builder.build_gep(
+                                element_ll_ty,
+                                value.llvm_value.into_pointer_value(),
+                                &[index],
+                                "ptr_array_index",
+                            )
+                        };
+
+                        Ok(Value::new(
+                            ptr.as_basic_value_enum(),
+                            CodegenType::Pointer(array.ty),
+                        ))
+                    }
+                    _ => Err(CompileError::type_that_cannot_be_indexed(
+                        (*self.expression.clone()).into(),
+                    )),
+                }
+            }
+            Expression::Binary(BinaryExpression {
+                left,
+                operator: BinaryOperator::Dot,
+                right,
+                position,
+            }) => {
+                let left = left.codegen(compiler)?;
+                let left_ty = match left.ty {
+                    CodegenType::Struct(struct_type) => struct_type,
+                    _ => {
+                        println!("{:?}", left.ty);
+                        return Err(CompileError::member_access_non_struct_type(position));
+                    }
+                };
+
+                let right = match *right.clone() {
+                    Expression::Literal(Literal::Identifier(identifier)) => identifier,
+                    _ => return Err(CompileError::expected("identifier", position)),
+                };
+
+                let field = match left_ty.fields.get(&right.identifier) {
+                    Some(field) => field,
+                    None => {
+                        return Err(CompileError::field_not_found(
+                            right.identifier,
+                            right.position,
+                        ))
+                    }
+                };
+
+                let ptr = unsafe {
+                    compiler.builder.build_gep(
+                        CodegenType::Struct(left_ty.clone()).to_llvm_type(compiler.context),
+                        left.llvm_value.into_pointer_value(),
+                        &[compiler.context.i64_type().const_int(field.0 as u64, false)],
+                        format!("ptr.struct.{}.{}", left_ty.name, field.0).as_str(),
+                    )
+                };
+
+                Ok(Value::new(
+                    ptr.as_basic_value_enum(),
+                    CodegenType::Pointer(Box::new(field.1.clone())),
+                ))
+            }
+            expression => {
+                let value = expression.codegen(compiler)?;
+
+                Ok(Value::new(
+                    compiler
+                        .builder
+                        .build_alloca(value.ty.to_llvm_type(compiler.context), "ptr")
+                        .as_basic_value_enum(),
+                    CodegenType::Pointer(Box::new(value.ty)),
+                ))
+            }
+        }
+    }
+}
+
+impl DisplayNode for PointerExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        write!(f, "&")?;
+        self.expression.display(f, indent)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DereferenceExpression {
+    pub expression: Box<Expression>,
+    pub position: Position,
+}
+
+impl ExpressionCodegen for DereferenceExpression {
+    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let value = self.expression.codegen(compiler)?;
+
+        match value.ty {
+            CodegenType::Pointer(ty) => {
+                let value = compiler.builder.build_load(
+                    ty.to_llvm_type(compiler.context),
+                    value.llvm_value.into_pointer_value(),
+                    "deref",
+                );
+                Ok(Value::new(value, *ty))
+            }
+            _ => Err(CompileError::expected("pointer", self.position)),
+        }
+    }
+}
+
+impl DisplayNode for DereferenceExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        write!(f, "*")?;
         self.expression.display(f, indent)
     }
 }

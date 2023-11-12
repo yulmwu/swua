@@ -84,7 +84,8 @@ impl_error_kind! {
     WrongNumberOfArguments(expected: String, found: String): wrong_number_of_arguments(usize, usize) => "wrong number of arguments: expected `{expected}`, found `{found}`",
     WrongNumberOfFields(expected: String, found: String): wrong_number_of_fields(usize, usize) => "wrong number of fields: expected `{expected}`, found `{found}`",
     CallNonFunctionType: call_non_function_type => "call non-function type",
-    MemberAccessNonStructType: member_access_non_struct_type => "member access non-struct type"
+    MemberAccessNonStructType: member_access_non_struct_type => "member access non-struct type",
+    CannotBeAssigned: cannot_be_assigned => "cannot be assigned"
 }
 
 pub type CompileResult<T> = Result<T, CompileError>;
