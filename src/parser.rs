@@ -137,14 +137,16 @@ impl<'a> Parser<'a> {
         use Priority::*;
         use TokenKind::*;
         match token_type {
-            Assign | EQ | NEQ => Equals,
+            Assign => Assign_,
+            EQ | NEQ => Equals,
             LT | GT | LTE | GTE => LessGreater,
             Plus | Minus => Sum,
-            Slash | Asterisk => Product,
+            Slash | Asterisk | Percent => Product,
             Typeof | Sizeof => Prefix,
             LParen => Call,
             LBracket => Index,
             Dot => MemberAccess,
+            As => Cast,
             _ => Lowest,
         }
     }
@@ -206,7 +208,9 @@ impl<'a> Parser<'a> {
 
         let ty = if self.current_token.kind == TokenKind::Colon {
             self.next_token();
-            Some(self.parse_ty()?)
+            let ty = self.parse_ty()?;
+            self.next_token();
+            Some(ty)
         } else {
             None
         };
@@ -241,6 +245,7 @@ impl<'a> Parser<'a> {
                 self.expect_token(&TokenKind::Colon)?;
 
                 let ty = self.parse_ty()?;
+                self.next_token();
 
                 parameters.push(Parameter {
                     name: Identifier {
@@ -267,6 +272,7 @@ impl<'a> Parser<'a> {
         self.expect_token(&TokenKind::Arrow)?;
 
         let return_type = self.parse_ty()?;
+        self.next_token();
 
         let body = match self.current_token.kind {
             TokenKind::LBrace => self.parse_block_expression()?,
@@ -321,7 +327,11 @@ impl<'a> Parser<'a> {
         let mut parameters = Vec::new();
 
         while self.current_token.kind != TokenKind::RParen {
-            parameters.push(self.parse_ty()?);
+            // parameters.push(self.parse_ty()?);
+            let ty = self.parse_ty()?;
+            self.next_token();
+
+            parameters.push(ty);
 
             if self.current_token.kind == TokenKind::RParen {
                 break;
@@ -334,6 +344,7 @@ impl<'a> Parser<'a> {
         self.expect_token(&TokenKind::Arrow)?;
 
         let return_type = self.parse_ty()?;
+        self.next_token();
 
         expect_semicolon_without_next_token! { self }
 
@@ -383,6 +394,7 @@ impl<'a> Parser<'a> {
         self.expect_token(&TokenKind::Assign)?;
 
         let ty = self.parse_ty()?;
+        self.next_token();
 
         expect_semicolon_without_next_token! { self }
 
@@ -405,6 +417,8 @@ impl<'a> Parser<'a> {
         self.expect_token(&TokenKind::Assign)?;
 
         let ty = self.parse_ty()?;
+        self.next_token();
+
         expect_semicolon_without_next_token! { self }
 
         Ok(Declaration {
@@ -434,6 +448,7 @@ impl<'a> Parser<'a> {
             self.expect_token(&TokenKind::Colon)?;
 
             let ty = self.parse_ty()?;
+            self.next_token();
             fields.insert(key.clone(), ty);
 
             if self.current_token.kind == TokenKind::RBrace {
@@ -565,6 +580,22 @@ impl<'a> Parser<'a> {
                     position: self.position,
                 })))
             }
+            TokenKind::Asterisk => {
+                self.next_token();
+
+                Some(Ok(Expression::Dereference(DereferenceExpression {
+                    expression: Box::new(self.parse_expression(&Priority::Prefix)?),
+                    position: self.position,
+                })))
+            }
+            TokenKind::Ampersand => {
+                self.next_token();
+
+                Some(Ok(Expression::Pointer(PointerExpression {
+                    expression: Box::new(self.parse_expression(&Priority::Prefix)?),
+                    position: self.position,
+                })))
+            }
             _ => None,
         };
 
@@ -578,22 +609,6 @@ impl<'a> Parser<'a> {
         let mut left_expression = left_expression.ok_or_else(|| {
             ParsingError::unexpected_token(self.current_token.kind.to_string(), self.position)
         })?;
-
-        if self.peek_token(&TokenKind::Assign) {
-            let identifier = Identifier {
-                identifier: ident_token_to_string! { self },
-                position: self.position,
-            };
-            self.next_token();
-            self.next_token();
-
-            let expression = self.parse_expression(&Priority::Lowest)?;
-            return Ok(Expression::Assign(AssignExpression {
-                name: identifier,
-                value: Box::new(expression),
-                position: self.position,
-            }));
-        }
 
         while !self.peek_token(&TokenKind::Semicolon) && priority < &self.peek_priority() {
             self.next_token();
@@ -621,6 +636,16 @@ impl<'a> Parser<'a> {
                         left: Box::new(left_expression?),
                         operator,
                         right,
+                        position: self.position,
+                    }))
+                }
+                TokenKind::Assign => {
+                    self.next_token();
+
+                    let value = self.parse_expression(&Priority::Lowest)?;
+                    Ok(Expression::Assign(AssignExpression {
+                        expression: Box::new(left_expression?),
+                        value: Box::new(value),
                         position: self.position,
                     }))
                 }
@@ -680,6 +705,15 @@ impl<'a> Parser<'a> {
                     Ok(Expression::Index(IndexExpression {
                         left: Box::new(left_expression?),
                         index: Box::new(index),
+                        position: self.position,
+                    }))
+                }
+                TokenKind::As => {
+                    self.next_token();
+
+                    Ok(Expression::Cast(CastExpression {
+                        expression: Box::new(left_expression?),
+                        cast_ty: self.parse_ty()?,
                         position: self.position,
                     }))
                 }
@@ -845,10 +879,7 @@ impl<'a> Parser<'a> {
     fn parse_ty(&mut self) -> ParseResult<AstType> {
         let position = self.position;
 
-        let result = self.parse_ty_kind();
-        self.next_token();
-
-        result.map(|kind| AstType { kind, position })
+        self.parse_ty_kind().map(|kind| AstType { kind, position })
     }
 
     fn parse_ty_kind(&mut self) -> ParseResult<AstTypeKind> {
@@ -857,6 +888,7 @@ impl<'a> Parser<'a> {
             TokenKind::FloatType => Ok(AstTypeKind::Float),
             TokenKind::StringType => Ok(AstTypeKind::String),
             TokenKind::BooleanType => Ok(AstTypeKind::Boolean),
+            TokenKind::VoidType => Ok(AstTypeKind::Void),
             TokenKind::Function => todo!(),
             TokenKind::IDENT(ref ident) => Ok(AstTypeKind::Named(Identifier {
                 identifier: ident.to_string(),
@@ -908,6 +940,15 @@ impl<'a> Parser<'a> {
                 len: size,
                 position: self.position,
             }));
+        }
+
+        if self.peek_token(&TokenKind::Asterisk) {
+            self.next_token();
+
+            ty = Ok(AstTypeKind::Pointer(Box::new(AstType {
+                kind: ty?,
+                position: self.position,
+            })));
         }
 
         ty

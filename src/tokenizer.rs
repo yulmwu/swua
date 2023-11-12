@@ -8,7 +8,7 @@ pub enum TokenKind<'a> {
 
     Int(i64), Float(f64), String(&'a str), Boolean(bool), Comment,
 
-    Assign, Plus, Minus, Bang, Asterisk, Slash, Percent, Arrow, DoubleArrow,
+    Assign, Plus, Minus, Bang, Asterisk, Slash, Percent, Arrow, DoubleArrow, Ampersand,
 
     Dot, Comma, Colon, DoubleColon, Semicolon,
 
@@ -16,9 +16,9 @@ pub enum TokenKind<'a> {
 
     LT, GT, LTE, GTE, EQ, NEQ,
 
-    Let, Function, If, Else, Return, Type, Declare, Struct, While,
+    Let, Function, If, Else, Return, Type, Declare, Struct, While, As,
 
-    IntType, FloatType, StringType, BooleanType,
+    IntType, FloatType, StringType, BooleanType, VoidType,
 
     Extern, Typeof, Sizeof,
 }
@@ -35,12 +35,14 @@ impl<'a> From<&'a str> for TokenKind<'a> {
             "declare" => TokenKind::Declare,
             "struct" => TokenKind::Struct,
             "while" => TokenKind::While,
+            "as" => TokenKind::As,
             "true" => TokenKind::Boolean(true),
             "false" => TokenKind::Boolean(false),
             "int" => TokenKind::IntType,
             "float" => TokenKind::FloatType,
             "string" => TokenKind::StringType,
             "boolean" => TokenKind::BooleanType,
+            "void" => TokenKind::VoidType,
             "extern" => TokenKind::Extern,
             "typeof" => TokenKind::Typeof,
             "sizeof" => TokenKind::Sizeof,
@@ -259,6 +261,7 @@ impl<'a> Lexer<'a> {
             '}' => RBrace,
             '[' => LBracket,
             ']' => RBracket,
+            '&' => Ampersand,
 
             '-' => next!('>' => Arrow; Minus),
 
