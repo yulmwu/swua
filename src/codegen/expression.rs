@@ -95,10 +95,7 @@ impl BinaryExpression {
         let left = self.left.codegen(compiler)?;
         let left_ty = match left.ty {
             CodegenType::Struct(struct_type) => struct_type,
-            _ => {
-                println!("{:?}", left.ty);
-                return Err(CompileError::member_access_non_struct_type(self.position));
-            }
+            _ => return Err(CompileError::member_access_non_struct_type(self.position)),
         };
 
         let right = match *self.right.clone() {
@@ -334,6 +331,92 @@ impl ExpressionCodegen for AssignExpression {
                         ))
                     }
                 }
+            }
+            Expression::Index(index) => {
+                let left = index.left.codegen(compiler)?;
+                let index = index.index.codegen(compiler)?;
+
+                match left.ty {
+                    CodegenType::Array(array) => {
+                        let index = match index.ty {
+                            CodegenType::Int => index.llvm_value.into_int_value(),
+                            _ => return Err(CompileError::expected("int", self.position)),
+                        };
+                        let element_ll_ty = array.ty.to_llvm_type(compiler.context);
+
+                        let ptr = unsafe {
+                            compiler.builder.build_gep(
+                                element_ll_ty,
+                                left.llvm_value.into_pointer_value(),
+                                &[index],
+                                "ptr_array_index",
+                            )
+                        };
+
+                        if *array.ty != value.ty {
+                            return Err(CompileError::type_mismatch(
+                                *array.ty,
+                                value.ty,
+                                self.position,
+                            ));
+                        }
+
+                        compiler.builder.build_store(ptr, value.llvm_value);
+                        value
+                    }
+                    _ => {
+                        return Err(CompileError::type_that_cannot_be_indexed(
+                            (*self.expression.clone()).into(),
+                        ))
+                    }
+                }
+            }
+            Expression::Binary(BinaryExpression {
+                left,
+                operator: BinaryOperator::Dot,
+                right,
+                position,
+            }) => {
+                let left = left.codegen(compiler)?;
+                let left_ty = match left.ty {
+                    CodegenType::Struct(struct_type) => struct_type,
+                    _ => return Err(CompileError::member_access_non_struct_type(position)),
+                };
+
+                let right = match *right.clone() {
+                    Expression::Literal(Literal::Identifier(identifier)) => identifier,
+                    _ => return Err(CompileError::expected("identifier", position)),
+                };
+
+                let field = match left_ty.fields.get(&right.identifier) {
+                    Some(field) => field,
+                    None => {
+                        return Err(CompileError::field_not_found(
+                            right.identifier,
+                            right.position,
+                        ))
+                    }
+                };
+
+                let ptr = unsafe {
+                    compiler.builder.build_gep(
+                        CodegenType::Struct(left_ty.clone()).to_llvm_type(compiler.context),
+                        left.llvm_value.into_pointer_value(),
+                        &[compiler.context.i64_type().const_int(field.0 as u64, false)],
+                        format!("ptr.struct.{}.{}", left_ty.name, field.0).as_str(),
+                    )
+                };
+
+                if field.1 != value.ty {
+                    return Err(CompileError::type_mismatch(
+                        field.1.clone(),
+                        value.ty,
+                        self.position,
+                    ));
+                }
+
+                compiler.builder.build_store(ptr, value.llvm_value);
+                value
             }
             Expression::Dereference(dereference) => {
                 let expression = dereference.expression.codegen(compiler)?;
@@ -864,10 +947,7 @@ impl ExpressionCodegen for PointerExpression {
                 let left = left.codegen(compiler)?;
                 let left_ty = match left.ty {
                     CodegenType::Struct(struct_type) => struct_type,
-                    _ => {
-                        println!("{:?}", left.ty);
-                        return Err(CompileError::member_access_non_struct_type(position));
-                    }
+                    _ => return Err(CompileError::member_access_non_struct_type(position)),
                 };
 
                 let right = match *right.clone() {
