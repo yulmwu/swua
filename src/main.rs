@@ -94,6 +94,26 @@ fn display_optimization_level(level: OptimizationLevel) -> &'static str {
     }
 }
 
+fn read_file(path: &Path) -> String {
+    fs::read_to_string(path).unwrap_or_else(|err| {
+        eprintln!(
+            "{}",
+            format!("Error: Failed to read file {}: {}", path.display(), err).red()
+        );
+        exit(1);
+    })
+}
+
+fn write_file(path: &Path, content: String) {
+    fs::write(path, content).unwrap_or_else(|err| {
+        eprintln!(
+            "{}",
+            format!("Error: Failed to write file {}: {}", path.display(), err).red()
+        );
+        exit(1);
+    })
+}
+
 fn main() {
     let cli = Cli::parse();
     let optimization_level = match cli.optimization_level.unwrap_or(0) {
@@ -131,7 +151,7 @@ fn main() {
 
             let now = Instant::now();
 
-            let source_code = fs::read_to_string(input.clone()).unwrap();
+            let source_code = read_file(&input);
             let context = Context::create();
             let module = match compile(&context, &source_code, &target_triple, &name) {
                 Ok(module) => module,
@@ -152,7 +172,13 @@ fn main() {
 
             let engine = module
                 .create_jit_execution_engine(optimization_level)
-                .unwrap();
+                .unwrap_or_else(|err| {
+                    eprintln!(
+                        "{}",
+                        format!("Error: Failed to create JIT engine: {}", err).red()
+                    );
+                    exit(1);
+                });
 
             type JitMainFunction = unsafe extern "C" fn() -> i64;
 
@@ -192,7 +218,7 @@ fn main() {
 
             let now = Instant::now();
 
-            let source_code = fs::read_to_string(input.clone()).unwrap();
+            let source_code = read_file(&input);
             let context = Context::create();
             let module = match compile(&context, &source_code, &target_triple, &name) {
                 Ok(module) => module,
@@ -204,16 +230,21 @@ fn main() {
             let output = output_dir.join(name);
 
             if llvm_ir {
-                fs::write(
-                    output.with_extension("ll"),
+                write_file(
+                    &output.with_extension("ll"),
                     module.print_to_string().to_string(),
-                )
-                .unwrap();
+                );
             }
 
             Target::initialize_all(&Default::default());
 
-            let target = Target::from_triple(&target_triple).unwrap();
+            let target = Target::from_triple(&target_triple).unwrap_or_else(|_| {
+                eprintln!(
+                    "{}",
+                    format!("Error: Failed to create target for {}", triple).red()
+                );
+                exit(1);
+            });
             let target_machine = target
                 .create_target_machine(
                     &target_triple,
@@ -223,7 +254,10 @@ fn main() {
                     RelocMode::Default,
                     CodeModel::Default,
                 )
-                .unwrap();
+                .unwrap_or_else(|| {
+                    eprintln!("{}", "Error: Failed to create target machine".red());
+                    exit(1);
+                });
 
             if asm {
                 target_machine
@@ -232,7 +266,13 @@ fn main() {
                         FileType::Assembly,
                         Path::new(&output.with_extension("s")),
                     )
-                    .unwrap();
+                    .unwrap_or_else(|err| {
+                        eprintln!(
+                            "{}",
+                            format!("Error: Failed to write assembly file: {}", err).red()
+                        );
+                        exit(1);
+                    });
             }
 
             target_machine
@@ -241,7 +281,13 @@ fn main() {
                     FileType::Object,
                     Path::new(&output.with_extension("o")),
                 )
-                .unwrap();
+                .unwrap_or_else(|err| {
+                    eprintln!(
+                        "{}",
+                        format!("Error: Failed to write object file: {}", err).red()
+                    );
+                    exit(1);
+                });
 
             let command = Command::new("clang")
                 .arg("-o")
@@ -252,9 +298,18 @@ fn main() {
                 .arg("-l")
                 .arg("swua")
                 .output()
-                .unwrap();
+                .unwrap_or_else(|err| {
+                    eprintln!(
+                        "{}",
+                        format!("Error: Failed to execute clang: {}", err).red()
+                    );
+                    exit(1);
+                });
 
-            let exit_code = command.status.code().unwrap();
+            let exit_code = command.status.code().unwrap_or_else(|| {
+                eprintln!("{}", "Error: clang terminated by signal".red());
+                exit(1);
+            });
             if exit_code != 0 {
                 eprintln!(
                     "{}",
