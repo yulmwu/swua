@@ -536,7 +536,19 @@ impl ExpressionCodegen for IfExpression {
         compiler.builder.position_at_end(else_block);
 
         let else_ = match self.alternative.clone() {
-            Some(expr) => expr.codegen(compiler)?,
+            Some(expr) => {
+                let else_ = expr.codegen(compiler)?;
+
+                if then.ty != else_.ty {
+                    return Err(CompileError::type_mismatch(
+                        then.ty,
+                        else_.ty,
+                        self.position,
+                    ));
+                }
+
+                else_
+            }
             None => Value::new(
                 compiler
                     .context
@@ -551,10 +563,6 @@ impl ExpressionCodegen for IfExpression {
         let else_block = compiler.builder.get_insert_block().unwrap();
 
         compiler.builder.position_at_end(merge_block);
-
-        if then.ty != else_.ty {
-            return Err(CompileError::if_else_must_have_the_same_type(self.position));
-        }
 
         let phi = compiler
             .builder
