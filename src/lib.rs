@@ -204,7 +204,7 @@ impl fmt::Display for AstTypeKind {
                 }
             ),
             AstTypeKind::Named(name) => write!(f, "{}", name.identifier),
-            AstTypeKind::Pointer(ty) => write!(f, "ptr {}", ty.kind),
+            AstTypeKind::Pointer(ty) => write!(f, "{}*", ty.kind),
         }
     }
 }
@@ -327,7 +327,7 @@ impl fmt::Display for CodegenType {
                 write!(f, "fn {}", function_type.name)
             }
             CodegenType::Void => write!(f, "void"),
-            CodegenType::Pointer(ty) => write!(f, "ptr {}", ty),
+            CodegenType::Pointer(ty) => write!(f, "{}*", ty),
         }
     }
 }
