@@ -236,22 +236,25 @@ impl ExpressionCodegen for ArrayLiteral {
         let array = array_type
             .to_llvm_type(compiler.context)
             .array_type(values.len() as u32);
-        let ptr = compiler
-            .builder
-            .build_alloca(array, ".array")
-            .as_basic_value_enum()
-            .into_pointer_value();
+        let ptr = compiler.builder.build_array_alloca(
+            array,
+            compiler
+                .context
+                .i64_type()
+                .const_int(values.len() as u64, true),
+            ".array",
+        );
 
         for (i, val) in values.iter().enumerate() {
-            let field = unsafe {
+            let ptr = unsafe {
                 compiler.builder.build_in_bounds_gep(
-                    compiler.context.i64_type(),
+                    array_type.to_llvm_type(compiler.context),
                     ptr,
-                    &[compiler.context.i64_type().const_int(i as u64, false)],
+                    &[compiler.context.i64_type().const_int(i as u64, true)],
                     format!("ptr.array.{}", i).as_str(),
                 )
             };
-            compiler.builder.build_store(field, *val);
+            compiler.builder.build_store(ptr, *val);
         }
 
         Ok(Value::new(
@@ -330,14 +333,10 @@ impl ExpressionCodegen for StructLiteral {
             feilds_type.insert(val.0.clone(), (i, value.ty));
         }
 
-        let ptr = compiler
-            .builder
-            .build_alloca(
-                llvm_struct_type,
-                format!("struct.{}", self.name.identifier).as_str(),
-            )
-            .as_basic_value_enum()
-            .into_pointer_value();
+        let ptr = compiler.builder.build_alloca(
+            llvm_struct_type,
+            format!("struct.{}", self.name.identifier).as_str(),
+        );
 
         for (i, val) in values.iter().enumerate() {
             let field = unsafe {

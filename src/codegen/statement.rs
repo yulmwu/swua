@@ -88,10 +88,11 @@ impl StatementCodegen for LetStatement {
 
         let alloca = compiler.builder.build_alloca(
             value.ty.to_llvm_type(compiler.context),
-            format!("var.{}", self.name.identifier).as_str(),
+            &self.name.identifier,
         );
 
         compiler.builder.build_store(alloca, value.llvm_value);
+
         compiler.symbol_table.insert_variable(
             self.name.identifier.clone(),
             value.ty,
