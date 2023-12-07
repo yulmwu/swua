@@ -1,7 +1,10 @@
-use super::{BlockExpression, CompileError, CompileResult, Expression, Identifier};
+use super::{
+    symbol_table::SymbolTable, types::AstType, BlockExpression, CompileError, CompileResult,
+    Expression, Identifier,
+};
 use crate::{
-    display, AstType, CodegenType, Compiler, DisplayNode, ExpressionCodegen, FunctionType,
-    Position, StatementCodegen, StructType, SymbolTable,
+    display, CodegenType, Compiler, DisplayNode, ExpressionCodegen, FunctionType, Position,
+    StatementCodegen, StructType,
 };
 use inkwell::{types::BasicType, IntPredicate};
 use std::{collections::BTreeMap, fmt};

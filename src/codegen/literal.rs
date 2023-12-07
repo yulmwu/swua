@@ -1,7 +1,6 @@
-use super::{CompileError, CompileResult, Expression};
+use super::{types::ArrayType, CompileError, CompileResult, Expression};
 use crate::{
-    display, ArrayType, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Position,
-    StructType, Value,
+    display, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Position, StructType, Value,
 };
 use inkwell::{
     types::BasicType,

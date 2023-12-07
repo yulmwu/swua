@@ -1,7 +1,9 @@
-use super::{CompileError, CompileResult, Literal, Statement};
+use super::{
+    symbol_table::SymbolTable, types::AstType, CompileError, CompileResult, Literal, Statement,
+};
 use crate::{
-    display, AstType, BinaryOperator, CodegenType, Compiler, DisplayNode, ExpressionCodegen,
-    Position, StatementCodegen, SymbolTable, UnaryOperator, Value,
+    display, BinaryOperator, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Position,
+    StatementCodegen, UnaryOperator, Value,
 };
 use inkwell::values::{BasicMetadataValueEnum, BasicValue};
 use std::fmt;

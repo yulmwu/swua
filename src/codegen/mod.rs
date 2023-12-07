@@ -6,6 +6,9 @@ pub use expression::*;
 pub use literal::*;
 pub use statement::*;
 
+pub mod symbol_table;
+pub mod types;
+
 use crate::{
     parser::{ParsingError, ParsingErrorKind},
     Position,
