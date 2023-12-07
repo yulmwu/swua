@@ -14,10 +14,9 @@ use std::{
     time::Instant,
 };
 use swua::{
-    codegen::{CompileError, CompileResult},
+    codegen::{symbol_table::SymbolTable, CompileError, CompileResult},
+    lexer::Lexer,
     parser::Parser,
-    tokenizer::Lexer,
-    SymbolTable,
 };
 
 fn compile<'a>(
