@@ -1,8 +1,18 @@
 use crate::{
-    codegen::*,
-    tokenizer::{Lexer, Token, TokenKind},
-    AstArrayTypeKind, AstType, AstTypeKind, BinaryOperator, Position, Priority, Program,
-    UnaryOperator,
+    codegen::{
+        types::{AstArrayTypeKind, AstType, AstTypeKind},
+        ArrayLiteral, AssignExpression, BinaryExpression, BlockExpression, BooleanLiteral,
+        CallExpression, CastExpression, Declaration, DereferenceExpression, Expression,
+        ExternalFunctionDeclaration, FloatLiteral, FunctionDefinition, Identifier, IfExpression,
+        IndexExpression, IntLiteral, LetStatement, Literal, Parameter, PointerExpression,
+        ReturnStatement, SizeofExpression, Statement, StringLiteral, StructDeclaration,
+        StructLiteral, TypeDeclaration, TypeofExpression, UnaryExpression, While,
+    },
+    lexer::{
+        tokens::{Token, TokenKind},
+        Lexer,
+    },
+    BinaryOperator, Position, Priority, Program, UnaryOperator,
 };
 use std::{collections::BTreeMap, fmt};
 
@@ -59,7 +69,7 @@ pub type ParseResult<T> = Result<T, ParsingError>;
 macro_rules! ident_token_to_string {
     ($self:ident) => {
         match $self.current_token.kind {
-            $crate::tokenizer::TokenKind::IDENT(ref ident) => ident.to_string(),
+            $crate::lexer::tokens::TokenKind::IDENT(ref ident) => ident.to_string(),
             _ => {
                 return Err(ParsingError::expected_next_token(
                     "Identifier".to_string(),
@@ -73,9 +83,9 @@ macro_rules! ident_token_to_string {
 
 macro_rules! expect_semicolon_without_next_token {
     ($self:ident) => {
-        if $self.current_token.kind != $crate::tokenizer::TokenKind::Semicolon {
+        if $self.current_token.kind != $crate::lexer::tokens::TokenKind::Semicolon {
             return Err(ParsingError::expected_next_token(
-                $crate::tokenizer::TokenKind::Semicolon.to_string(),
+                $crate::lexer::tokens::TokenKind::Semicolon.to_string(),
                 $self.current_token.kind.to_string(),
                 $self.position,
             ));
