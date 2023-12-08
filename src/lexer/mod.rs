@@ -175,6 +175,8 @@ impl<'a> Lexer<'a> {
             '[' => LBracket,
             ']' => RBracket,
             '&' => Ampersand,
+            '@' => At,
+            '#' => Sharp,
 
             '-' => next!('>' => Arrow; Minus),
 
