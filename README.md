@@ -60,7 +60,7 @@ fn main() -> int {
 
 See [examples](./examples) for more details.
 
-> **Note**
+> [!NOTE]
 >
 > Syntax may change in the future. it is currently based on the syntax of Rust and C-like languages.
 
