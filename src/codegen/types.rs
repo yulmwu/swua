@@ -23,7 +23,8 @@ pub enum AstTypeKind {
     Boolean,
     String,
     Array(AstArrayTypeKind),
-    Named(Identifier),
+    TypeAlias(Identifier),
+    Struct(Identifier),
     Void,
     Pointer(Box<AstType>),
 }
@@ -48,7 +49,8 @@ impl AstTypeKind {
                 len: array_type.len,
                 position: array_type.position,
             }),
-            AstTypeKind::Named(name) => {
+            AstTypeKind::TypeAlias(_) => todo!(),
+            AstTypeKind::Struct(name) => {
                 let struct_type = match symbol_table.get_struct(&name.identifier) {
                     Some(struct_type) => struct_type,
                     None => {
@@ -85,7 +87,8 @@ impl fmt::Display for AstTypeKind {
                     String::new()
                 }
             ),
-            AstTypeKind::Named(name) => write!(f, "{}", name.identifier),
+            AstTypeKind::TypeAlias(name) => write!(f, "@{}", name.identifier),
+            AstTypeKind::Struct(name) => write!(f, "{}", name.identifier),
             AstTypeKind::Pointer(ty) => write!(f, "{}*", ty.kind),
         }
     }
