@@ -201,11 +201,12 @@ pub enum Priority {
     LessGreater,
     Sum,
     Product,
-    Cast,
     Prefix,
     Call,
     Index,
+    Cast,
     MemberAccess,
+    StructLiteral,
 }
 
 pub trait DisplayNode {

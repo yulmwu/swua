@@ -81,18 +81,6 @@ macro_rules! ident_token_to_string {
     };
 }
 
-macro_rules! expect_semicolon_without_next_token {
-    ($self:ident) => {
-        if $self.current_token.kind != $crate::lexer::tokens::TokenKind::Semicolon {
-            return Err(ParsingError::expected_next_token(
-                $crate::lexer::tokens::TokenKind::Semicolon.to_string(),
-                $self.current_token.kind.to_string(),
-                $self.position,
-            ));
-        }
-    };
-}
-
 #[derive(Debug, Default)]
 pub struct Parser<'a> {
     pub lexer: Lexer<'a>,
@@ -132,7 +120,20 @@ impl<'a> Parser<'a> {
 
             Ok(())
         } else {
-            Err(ParsingError::expected_expression(
+            Err(ParsingError::expected_next_token(
+                token_type.to_string(),
+                self.current_token.kind.to_string(),
+                self.position,
+            ))
+        }
+    }
+
+    fn expect_semicolon(&mut self) -> ParseResult<()> {
+        if self.current_token.kind == TokenKind::Semicolon {
+            Ok(())
+        } else {
+            Err(ParsingError::expected_next_token(
+                TokenKind::Semicolon.to_string(),
                 self.current_token.kind.to_string(),
                 self.position,
             ))
@@ -155,8 +156,9 @@ impl<'a> Parser<'a> {
             Typeof | Sizeof => Prefix,
             LParen => Call,
             LBracket => Index,
-            Dot => MemberAccess,
             As => Cast,
+            Dot => MemberAccess,
+            LBrace => StructLiteral,
             _ => Lowest,
         }
     }
@@ -298,8 +300,7 @@ impl<'a> Parser<'a> {
                 };
 
                 self.next_token();
-
-                expect_semicolon_without_next_token! { self }
+                self.expect_semicolon()?;
 
                 block
             }
@@ -337,7 +338,6 @@ impl<'a> Parser<'a> {
         let mut parameters = Vec::new();
 
         while self.current_token.kind != TokenKind::RParen {
-            // parameters.push(self.parse_ty()?);
             let ty = self.parse_ty()?;
             self.next_token();
 
@@ -355,8 +355,7 @@ impl<'a> Parser<'a> {
 
         let return_type = self.parse_ty()?;
         self.next_token();
-
-        expect_semicolon_without_next_token! { self }
+        self.expect_semicolon()?;
 
         Ok(ExternalFunctionDeclaration {
             name: Identifier {
@@ -405,8 +404,7 @@ impl<'a> Parser<'a> {
 
         let ty = self.parse_ty()?;
         self.next_token();
-
-        expect_semicolon_without_next_token! { self }
+        self.expect_semicolon()?;
 
         Ok(TypeDeclaration {
             name: Identifier {
@@ -428,8 +426,7 @@ impl<'a> Parser<'a> {
 
         let ty = self.parse_ty()?;
         self.next_token();
-
-        expect_semicolon_without_next_token! { self }
+        self.expect_semicolon()?;
 
         Ok(Declaration {
             name: Identifier {
@@ -483,8 +480,10 @@ impl<'a> Parser<'a> {
     fn parse_while_statement(&mut self) -> ParseResult<While> {
         self.next_token();
 
+        self.expect_token(&TokenKind::LParen)?;
         let condition = self.parse_expression(&Priority::Lowest)?;
         self.next_token();
+        self.expect_token(&TokenKind::RParen)?;
 
         if self.current_token.kind != TokenKind::LBrace {
             return Err(ParsingError::expected_next_token(
@@ -569,9 +568,6 @@ impl<'a> Parser<'a> {
             TokenKind::LBrace => Some(Ok(Expression::Block(self.parse_block_expression()?))),
             TokenKind::LBracket => Some(Ok(Expression::Literal(Literal::Array(
                 self.parse_array_literal()?,
-            )))),
-            TokenKind::Struct => Some(Ok(Expression::Literal(Literal::Struct(
-                self.parse_struct_literal()?,
             )))),
             TokenKind::If => Some(Ok(Expression::If(self.parse_if_expression()?))),
             TokenKind::Typeof => {
@@ -718,6 +714,52 @@ impl<'a> Parser<'a> {
                         position: self.position,
                     }))
                 }
+                TokenKind::LBrace => {
+                    let identifier = match left_expression? {
+                        Expression::Literal(Literal::Identifier(identifier)) => identifier,
+                        _ => {
+                            return Err(ParsingError::expected_next_token(
+                                "Identifier".to_string(),
+                                self.current_token.kind.to_string(),
+                                self.position,
+                            ))
+                        }
+                    };
+
+                    self.expect_token(&TokenKind::LBrace)?;
+
+                    let mut fields = BTreeMap::new();
+
+                    while self.current_token.kind != TokenKind::RBrace {
+                        let key = ident_token_to_string! { self };
+                        self.next_token();
+
+                        self.expect_token(&TokenKind::Colon)?;
+
+                        fields.insert(key.clone(), self.parse_expression(&Priority::Lowest)?);
+                        self.next_token();
+
+                        if self.current_token.kind == TokenKind::RBrace {
+                            break;
+                        }
+
+                        self.expect_token(&TokenKind::Comma)?;
+                    }
+
+                    if self.current_token.kind != TokenKind::RBrace {
+                        return Err(ParsingError::expected_next_token(
+                            TokenKind::RBrace.to_string(),
+                            self.current_token.kind.to_string(),
+                            self.position,
+                        ));
+                    }
+
+                    Ok(Expression::Literal(Literal::Struct(StructLiteral {
+                        name: identifier,
+                        fields,
+                        position: self.position,
+                    })))
+                }
                 TokenKind::As => {
                     self.next_token();
 
@@ -790,56 +832,13 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_struct_literal(&mut self) -> ParseResult<StructLiteral> {
-        self.next_token();
-
-        let identifier_position = self.position;
-        let identifier = ident_token_to_string! { self };
-
-        self.next_token();
-        self.expect_token(&TokenKind::LBrace)?;
-
-        let mut fields = BTreeMap::new();
-
-        while self.current_token.kind != TokenKind::RBrace {
-            let key = ident_token_to_string! { self };
-            self.next_token();
-
-            self.expect_token(&TokenKind::Colon)?;
-
-            fields.insert(key.clone(), self.parse_expression(&Priority::Lowest)?);
-            self.next_token();
-
-            if self.current_token.kind == TokenKind::RBrace {
-                break;
-            }
-
-            self.expect_token(&TokenKind::Comma)?;
-        }
-
-        if self.current_token.kind != TokenKind::RBrace {
-            return Err(ParsingError::expected_next_token(
-                TokenKind::RBrace.to_string(),
-                self.current_token.kind.to_string(),
-                self.position,
-            ));
-        }
-
-        Ok(StructLiteral {
-            name: Identifier {
-                identifier,
-                position: identifier_position,
-            },
-            fields,
-            position: self.position,
-        })
-    }
-
     fn parse_if_expression(&mut self) -> ParseResult<IfExpression> {
         self.next_token();
 
+        self.expect_token(&TokenKind::LParen)?;
         let condition = self.parse_expression(&Priority::Lowest)?;
         self.next_token();
+        self.expect_token(&TokenKind::RParen)?;
 
         if self.current_token.kind != TokenKind::LBrace {
             return Err(ParsingError::expected_next_token(
@@ -900,8 +899,16 @@ impl<'a> Parser<'a> {
             TokenKind::BooleanType => Ok(AstTypeKind::Boolean),
             TokenKind::VoidType => Ok(AstTypeKind::Void),
             TokenKind::Function => todo!(),
-            TokenKind::IDENT(ref ident) => Ok(AstTypeKind::Named(Identifier {
-                identifier: ident.to_string(),
+            TokenKind::At => {
+                self.next_token();
+
+                Ok(AstTypeKind::TypeAlias(Identifier {
+                    identifier: ident_token_to_string! { self },
+                    position: self.position,
+                }))
+            }
+            TokenKind::IDENT(identifier) => Ok(AstTypeKind::Struct(Identifier {
+                identifier: identifier.to_string(),
                 position: self.position,
             })),
             _ => Err(ParsingError::unexpected_token(
