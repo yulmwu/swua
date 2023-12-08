@@ -6,7 +6,7 @@ fn main() -> int {
     let arr = [1, 2, 3, 4, 5];
     let len = (sizeof arr) / sizeof arr[0];
     let i = 0;
-    while i < len {
+    while (i < len) {
         print_str(concat_str("Hello, ", to_string(arr[i])));
         i = i + 1;
     }

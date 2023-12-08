@@ -1,7 +1,7 @@
 extern fn print(int) -> int;
 
 fn fib(n: int) -> int {
-    return if n < 2 {
+    return if (n < 2) {
         return n;
     } else {
         return fib(n - 1) + fib(n - 2);

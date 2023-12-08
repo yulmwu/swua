@@ -10,10 +10,10 @@ struct Bar { data: Foo[], bar: int[] };
 fn add(a: int, b: int) -> int => a + b;
 
 fn main() -> int {
-    let foo1: Foo = struct Foo { x: 2, y: 3 };
-    let foo2: Foo = struct Foo { x: 10, y: 20 };
+    let foo1: Foo = Foo { x: 2, y: 3 };
+    let foo2: Foo = Foo { x: 10, y: 20 };
 
-    let bar: Bar = struct Bar {
+    let bar: Bar = Bar {
         data: [foo1, foo2],
         bar: [0, 1, 2, 3, 4, 5]
     };
@@ -27,7 +27,7 @@ fn main() -> int {
     print_str(concat_str("a = ", to_string(a)));
     print_str(concat_str("b = ", to_string(b)));
 
-    let result = if a == 12 {
+    let result = if (a == 12) {
         print_str("a == 12");
         return add(a, b);
     } else {
