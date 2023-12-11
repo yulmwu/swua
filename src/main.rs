@@ -16,19 +16,25 @@ use std::{
 use swua::{
     codegen::{symbol_table::SymbolTable, CompileError, CompileResult},
     lexer::Lexer,
-    parser::Parser,
+    parser::{Parser, ParsingError},
 };
 
 fn compile<'a>(
     context: &'a Context,
-    source_code: &str,
+    source_code: String,
     triple: &TargetTriple,
     name: &str,
 ) -> CompileResult<Module<'a>> {
-    let program = Parser::new(Lexer::new(source_code))
+    let mut lexer = Lexer::new(source_code);
+    lexer.tokenize().map_err(ParsingError::from)?;
+
+    println!("{:#?}", lexer.tokens);
+
+    let program = Parser::new(lexer.tokens.into_iter())
         .parse_program()
-        .map_err(|err| CompileError::from(err[0].clone()))?;
-    // println!("{}", program);
+        .map_err(CompileError::from)?;
+    println!("{}", program);
+
     program.codegen(context, SymbolTable::default(), triple, name)
 }
 
@@ -36,19 +42,19 @@ fn compile_error(err: CompileError, name: &str, filename: &str, file_content: St
     println!("{}:", "Compilation failed due to".red().bold());
 
     let lines: Vec<&str> = file_content.split('\n').collect();
-    let line = lines[err.position.line - 1];
+    let line = lines[err.span.start.line - 1];
 
-    let spacing = err.position.line.to_string().len();
+    let spacing = err.span.start.line.to_string().len();
     println!("{}", format!(" {} |", " ".repeat(spacing)).blue());
-    println!("{}{line}", format!(" {} |", err.position.line).blue());
+    println!("{}{line}", format!(" {} |", err.span.start.line).blue());
     println!(
         "{}{}{}",
         format!(" {} |", " ".repeat(spacing)).blue(),
-        " ".repeat(err.position.column - 1),
+        " ".repeat(err.span.start.column - 1),
         format!("^ Error: {}", err.kind).red().underline()
     );
 
-    println!(" {} {filename}:{} ({name})", "--->".blue(), err.position);
+    println!(" {} {filename}:{} ({name})", "--->".blue(), err.span.start);
 }
 
 #[derive(ClapParser, Debug)]
@@ -152,7 +158,7 @@ fn main() {
 
             let source_code = read_file(&input);
             let context = Context::create();
-            let module = match compile(&context, &source_code, &target_triple, &name) {
+            let module = match compile(&context, source_code.clone(), &target_triple, &name) {
                 Ok(module) => module,
                 Err(err) => {
                     compile_error(err, &name, input.to_str().unwrap(), source_code);
@@ -219,7 +225,7 @@ fn main() {
 
             let source_code = read_file(&input);
             let context = Context::create();
-            let module = match compile(&context, &source_code, &target_triple, &name) {
+            let module = match compile(&context, source_code.clone(), &target_triple, &name) {
                 Ok(module) => module,
                 Err(err) => {
                     compile_error(err, &name, input.to_str().unwrap(), source_code);

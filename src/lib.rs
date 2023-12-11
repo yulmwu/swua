@@ -66,6 +66,33 @@ impl fmt::Display for Position {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Span {
+    pub start: Position,
+    pub end: Position,
+}
+
+impl Span {
+    pub fn new(start: Position, end: Position) -> Self {
+        Self { start, end }
+    }
+}
+
+impl PartialEq for Span {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl From<Position> for Span {
+    fn from(position: Position) -> Self {
+        Self {
+            start: position,
+            end: position,
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Program {
     pub statements: Vec<Statement>,
@@ -129,7 +156,7 @@ pub enum BinaryOperator {
     LTE,      // A <= B
 }
 
-impl From<TokenKind<'_>> for BinaryOperator {
+impl From<TokenKind> for BinaryOperator {
     fn from(token_kind: TokenKind) -> Self {
         match token_kind {
             TokenKind::Dot => Self::Dot,
@@ -174,7 +201,7 @@ pub enum UnaryOperator {
     Not,
 }
 
-impl From<TokenKind<'_>> for UnaryOperator {
+impl From<TokenKind> for UnaryOperator {
     fn from(token_kind: TokenKind) -> Self {
         match token_kind {
             TokenKind::Minus => Self::Minus,
@@ -207,6 +234,27 @@ pub enum Priority {
     Cast,
     MemberAccess,
     StructLiteral,
+}
+
+impl From<TokenKind> for Priority {
+    fn from(token_kind: TokenKind) -> Self {
+        use Priority::*;
+        use TokenKind::*;
+        match token_kind {
+            Assign => Assign_,
+            EQ | NEQ => Equals,
+            LT | GT | LTE | GTE => LessGreater,
+            Plus | Minus => Sum,
+            Slash | Asterisk | Percent => Product,
+            Typeof | Sizeof => Prefix,
+            LParen => Call,
+            LBracket => Index,
+            As => Cast,
+            Dot => MemberAccess,
+            LBrace => StructLiteral,
+            _ => Lowest,
+        }
+    }
 }
 
 pub trait DisplayNode {
