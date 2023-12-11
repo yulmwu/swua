@@ -70,7 +70,7 @@ See [examples](./examples) for more details.
 
 -   [x] Frontend
     -   [x] Lexer
-    -   [x] Parser
+    -   [ ] Parser
     -   [x] AST
     -   [x] Type Checker (Semantic Analysis)
 -   [x] Backend (WIP)
