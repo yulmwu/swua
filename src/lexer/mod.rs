@@ -1,27 +1,82 @@
 pub mod tokens;
 
-use crate::Position;
+use crate::{Position, Span};
+use std::fmt;
 use tokens::{Token, TokenKind};
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Lexer<'a> {
-    pub input: &'a str,
-    pub position: usize,
-    pub read_position: usize,
-    pub current_char: char,
-    pub current_position: Position,
+#[derive(Debug, Clone, PartialEq)]
+pub struct LexingError {
+    pub kind: LexingErrorKind,
+    pub span: Span,
 }
 
-impl<'a> Lexer<'a> {
-    pub fn new(input: &'a str) -> Self {
-        let mut lexer = Lexer {
+macro_rules! impl_error_kind {
+    (
+        $(
+            $ident:ident$(($($arg:ident: $ty:ty),*))?:
+            $fn:ident$(<$gen:ident$(: $gen_1:tt$(+$gen_n:tt)*)?>)? $(($($param_ty:ty),*))? => $fmt:expr
+        ),*
+    ) => {
+        #[derive(Debug, Clone, PartialEq)]
+        pub enum LexingErrorKind {
+            $($ident$(($($ty),*))?,)*
+        }
+
+        impl fmt::Display for LexingErrorKind {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    $(Self::$ident$(($($arg),*))? => write!(f, $fmt),)*
+                }
+            }
+        }
+
+        impl LexingError {
+            pub fn new(kind: LexingErrorKind, span: Span) -> Self {
+                Self { kind, span }
+            }
+
+            $(
+                pub fn $fn<$($gen$(: $gen_1$(+$gen_n)*)?)?>($($($arg: $param_ty,)*)? span: Span) -> Self
+                {
+                    Self::new(LexingErrorKind::$ident$(($($arg.to_string()),*))?, span)
+                }
+            )*
+        }
+    };
+}
+
+impl_error_kind! {
+    InvalidEscapeSequence(escape_sequence: String): invalid_escape_sequence<T: ToString>(T) => "invalid escape sequence `{escape_sequence}`",
+    UnterminatedStringLiteral: unterminated_string_literal => "unterminated string literal",
+    UnexpectedCharacter(character: String): unexpected_character<T: ToString>(T) => "unexpected character `{character}`"
+}
+
+type Result<T> = std::result::Result<T, LexingError>;
+
+#[derive(Debug, Clone, Default)]
+pub struct Lexer {
+    pub input: String,
+    pub tokens: Vec<Token>,
+    position: usize,
+    read_position: usize,
+    current_char: char,
+    current_position: Position,
+    indent_stack: Vec<usize>,
+    nested_indent: usize,
+}
+
+impl Lexer {
+    pub fn new(input: String) -> Lexer {
+        let mut t = Lexer {
             input,
+            tokens: Vec::new(),
             current_position: Position::new(1, 0),
+            indent_stack: vec![0],
             ..Default::default()
         };
 
-        lexer.read_char();
-        lexer
+        t.read_char();
+        t
     }
 
     fn read_char(&mut self) {
@@ -30,205 +85,339 @@ impl<'a> Lexer<'a> {
         } else {
             self.current_char = self.input.chars().nth(self.read_position).unwrap();
         }
-
         self.position = self.read_position;
         self.read_position += 1;
-
         self.current_position.column += 1;
     }
 
-    fn peek_char(&self) -> char {
-        if self.read_position >= self.input.len() {
-            '\0'
-        } else {
-            self.input.chars().nth(self.read_position).unwrap()
-        }
+    fn span_from(&self, start: Position) -> Span {
+        Span::new(start, self.current_position)
     }
 
-    fn skip_whitespace(&mut self) {
-        while self.current_char.is_whitespace() {
-            if self.current_char == '\n' {
-                self.current_position.line += 1;
-                self.current_position.column = 0;
+    pub fn tokenize(&mut self) -> Result<()> {
+        self.read_indent()?;
+        loop {
+            self.next_token()?;
+            if self.tokens.last().unwrap().kind == TokenKind::EOF {
+                break;
             }
-
-            self.read_char();
         }
+        Ok(())
     }
 
-    fn read_identifier(&mut self) -> &'a str {
+    fn read_indent(&mut self) -> Result<()> {
+        let start_position = self.current_position;
+
+        let mut indent: usize = 0;
+        loop {
+            match self.current_char {
+                ' ' => {
+                    indent += 1;
+                    self.read_char();
+                }
+                '\t' => {
+                    indent += 4;
+                    self.read_char();
+                }
+                '\r' => {
+                    self.read_char();
+                }
+                _ => break,
+            }
+        }
+
+        use std::cmp::Ordering::*;
+        match indent.cmp(self.indent_stack.last().unwrap()) {
+            Greater => {
+                while indent > *self.indent_stack.last().unwrap() {
+                    self.indent_stack
+                        .push(*self.indent_stack.last().unwrap() + 4);
+                    self.tokens.push(Token::new(
+                        TokenKind::Indent,
+                        self.span_from(start_position),
+                    ));
+                }
+            }
+            Less => {
+                while indent < *self.indent_stack.last().unwrap() {
+                    self.indent_stack.pop();
+                    self.tokens.push(Token::new(
+                        TokenKind::Dedent,
+                        self.span_from(start_position),
+                    ));
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn read_identifier(&mut self) -> Result<()> {
         let position = self.position;
+        let start_position = self.current_position;
+
         while self.current_char.is_alphanumeric() || self.current_char == '_' {
             self.read_char();
         }
 
-        &self.input[position..self.position]
+        let value = &self.input[position..self.position];
+
+        let keywords = match value {
+            "let" => TokenKind::Let,
+            "fn" => TokenKind::Function,
+            "if" => TokenKind::If,
+            "else" => TokenKind::Else,
+            "return" => TokenKind::Return,
+            "type" => TokenKind::Type,
+            "declare" => TokenKind::Declare,
+            "struct" => TokenKind::Struct,
+            "while" => TokenKind::While,
+            "as" => TokenKind::As,
+            "true" => TokenKind::Boolean(true),
+            "false" => TokenKind::Boolean(false),
+            "int" => TokenKind::IntType,
+            "float" => TokenKind::FloatType,
+            "string" => TokenKind::StringType,
+            "boolean" => TokenKind::BooleanType,
+            "void" => TokenKind::VoidType,
+            "extern" => TokenKind::Extern,
+            "typeof" => TokenKind::Typeof,
+            "sizeof" => TokenKind::Sizeof,
+            identifier => TokenKind::Identifier(identifier.to_string()),
+        };
+        self.tokens
+            .push(Token::new(keywords, self.span_from(start_position)));
+        Ok(())
     }
 
-    fn read_number(&mut self) -> TokenKind<'a> {
+    fn read_number(&mut self) -> Result<()> {
         let position = self.position;
-        let mut has_dot = false;
+        let start_position = self.current_position;
+        let mut is_float = false;
 
         while self.current_char.is_numeric() || self.current_char == '.' {
             if self.current_char == '.' {
-                if has_dot {
+                if is_float {
                     break;
                 }
 
-                has_dot = true;
+                is_float = true;
             }
 
             self.read_char();
         }
 
-        if has_dot {
+        let token = if is_float {
             TokenKind::Float(self.input[position..self.position].parse::<f64>().unwrap())
         } else {
             TokenKind::Int(self.input[position..self.position].parse::<i64>().unwrap())
-        }
-    }
-
-    fn read_string(&mut self) -> &'a str {
-        let position = self.position + 1;
-        while self.peek_char() != '"' && self.current_char != '\0' {
-            self.read_char();
-        }
-
-        self.read_char();
-        &self.input[position..self.position]
-    }
-
-    fn read_comment(&mut self) {
-        if self.current_char == '/' && self.peek_char() == '*' {
-            self.read_char();
-            self.read_char();
-
-            while self.current_char != '\0' && (self.current_char != '*' || self.peek_char() != '/')
-            {
-                if self.current_char == '\n' {
-                    self.current_position.line += 1;
-                    self.current_position.column = 0;
-                }
-
-                self.read_char();
-            }
-
-            self.read_char();
-        } else if self.current_char == '/' && self.peek_char() == '/' {
-            self.read_char();
-            self.read_char();
-
-            while self.current_char != '\0' && self.current_char != '\n' {
-                self.read_char();
-            }
-
-            self.skip_whitespace();
-        }
-    }
-
-    pub fn next_token(&mut self) -> Token<'a> {
-        use TokenKind::*;
-
-        self.skip_whitespace();
-
-        macro_rules! match_token {
-            ($($token:expr => $token_type:expr),*) => {{
-                let position = self.current_position;
-
-                match self.current_char {
-                    $( $token => Token::new($token_type, position), )*
-                    token => Token::new(TokenKind::ILLEGAL(token), position)
-                }
-            }}
-        }
-
-        macro_rules! next {
-            (@macro_read $n_token:expr => $t_token:expr; $e_token:expr; $next:expr) => {
-                if self.peek_char() == $n_token {
-                    if $next {
-                        self.read_char();
-                    }
-                    $t_token
-                } else {
-                    $e_token
-                }
-            };
-            (@no_read $n_token:expr => $t_token:expr; $e_token:expr) => {
-                next!(@macro_read $n_token => $t_token; $e_token; false)
-            };
-            ($n_token:expr => $t_token:expr; $e_token:expr) => {
-                next!(@macro_read $n_token => $t_token; $e_token; true)
-            };
-        }
-
-        let token = match_token! {
-            '+' => Plus,
-            '*' => Asterisk,
-            '%' => Percent,
-            '.' => Dot,
-            ',' => Comma,
-            ';' => Semicolon,
-            '(' => LParen,
-            ')' => RParen,
-            '{' => LBrace,
-            '}' => RBrace,
-            '[' => LBracket,
-            ']' => RBracket,
-            '&' => Ampersand,
-            '@' => At,
-            '#' => Sharp,
-
-            '-' => next!('>' => Arrow; Minus),
-
-            '=' => next!('=' => EQ; next!('>' => DoubleArrow; Assign)),
-            '!' => next!('=' => NEQ; Bang),
-            '<' => next!('=' => LTE; LT),
-            '>' => next!('=' => GTE; GT),
-            ':' => next!(':' => DoubleColon; Colon),
-
-            '"' => String(self.read_string()),
-
-            '/' => next!(@no_read '*' => {
-                self.read_comment();
-                self.next_token();
-
-                return self.next_token();
-            }; next!(@no_read '/' => {
-                self.read_comment();
-
-                return self.next_token();
-            }; Slash)),
-
-            '\0' => EOF
         };
 
-        match self.current_char {
-            'a'..='z' | 'A'..='Z' | '_' => {
-                let position = self.current_position;
-                Token::new(TokenKind::from(self.read_identifier()), position)
-            }
-            '0'..='9' => {
-                let position = self.current_position;
-                Token::new(self.read_number(), position)
-            }
-            _ => {
-                self.read_char();
-                token
+        self.tokens
+            .push(Token::new(token, self.span_from(start_position)));
+        Ok(())
+    }
+
+    fn read_string(&mut self) -> Result<()> {
+        let start_position = self.current_position;
+
+        self.read_char();
+        let mut value = String::new();
+        loop {
+            match self.current_char {
+                '"' => {
+                    self.read_char();
+                    break;
+                }
+                '\\' => {
+                    let start_position = self.current_position;
+                    self.read_char();
+                    match self.current_char {
+                        'n' => {
+                            value.push('\n');
+                            self.read_char();
+                        }
+                        'r' => {
+                            value.push('\r');
+                            self.read_char();
+                        }
+                        't' => {
+                            value.push('\t');
+                            self.read_char();
+                        }
+                        '\\' => {
+                            value.push('\\');
+                            self.read_char();
+                        }
+                        '"' => {
+                            value.push('"');
+                            self.read_char();
+                        }
+                        _ => {
+                            return Err(LexingError::invalid_escape_sequence(
+                                self.input[self.position..self.read_position].to_string(),
+                                self.span_from(start_position),
+                            ))
+                        }
+                    }
+                }
+                '\n' | '\0' => {
+                    return Err(LexingError::unterminated_string_literal(
+                        self.span_from(start_position),
+                    ))
+                }
+                c => {
+                    value.push(c);
+                    self.read_char();
+                }
             }
         }
+
+        self.tokens.push(Token::new(
+            TokenKind::String(value.clone()),
+            self.span_from(start_position),
+        ));
+        Ok(())
     }
-}
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = Token<'a>;
+    fn single(&mut self, kind: TokenKind) -> Result<()> {
+        self.read_char();
+        let token = Token::new(kind, self.span_from(self.current_position));
+        self.tokens.push(token);
+        Ok(())
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let token = self.next_token();
+    fn double(&mut self, kind_1: TokenKind, char_2: char, kind_2: TokenKind) -> Result<()> {
+        let start_position = self.current_position;
 
-        if token.kind == TokenKind::EOF {
-            None
+        self.read_char();
+        let token = if self.current_char == char_2 {
+            self.read_char();
+            Token::new(kind_2, self.span_from(start_position))
         } else {
-            Some(token)
+            Token::new(kind_1, self.span_from(start_position))
+        };
+        self.tokens.push(token);
+        Ok(())
+    }
+
+    fn triple(
+        &mut self,
+        kind_1: TokenKind,
+        char_2: char,
+        kind_2: TokenKind,
+        char_3: char,
+        kind_3: TokenKind,
+    ) -> Result<()> {
+        let start_position = self.current_position;
+
+        self.read_char();
+        let token = if self.current_char == char_2 {
+            self.read_char();
+            Token::new(kind_2, self.span_from(start_position))
+        } else if self.current_char == char_3 {
+            self.read_char();
+            Token::new(kind_3, self.span_from(start_position))
+        } else {
+            Token::new(kind_1, self.span_from(start_position))
+        };
+        self.tokens.push(token);
+        Ok(())
+    }
+
+    fn next_token(&mut self) -> Result<()> {
+        let start_position = self.current_position;
+
+        match self.current_char {
+            ' ' | '\t' | '\r' => {
+                self.read_char();
+                self.next_token()
+            }
+            '\n' => {
+                self.current_position.line += 1;
+                self.current_position.column = 0;
+
+                if self.nested_indent == 0 {
+                    self.tokens.push(Token::new(
+                        TokenKind::Newline,
+                        self.span_from(start_position),
+                    ));
+                    self.read_char();
+                    self.read_indent()
+                } else {
+                    self.read_char();
+                    self.next_token()
+                }
+            }
+            c if c.is_alphabetic() || c == '_' => self.read_identifier(),
+            c if c.is_numeric() => self.read_number(),
+            '"' => self.read_string(),
+            '=' => self.triple(
+                TokenKind::Assign,
+                '=',
+                TokenKind::EQ,
+                '>',
+                TokenKind::DoubleArrow,
+            ),
+            '+' => self.single(TokenKind::Plus),
+            '-' => self.double(TokenKind::Minus, '>', TokenKind::Arrow),
+            '!' => self.double(TokenKind::Bang, '=', TokenKind::NEQ),
+            '*' => self.single(TokenKind::Asterisk),
+            '/' => {
+                if self.current_char == '/' {
+                    self.read_char();
+                    while self.current_char != '\n' && self.current_char != '\0' {
+                        self.read_char();
+                    }
+                    self.next_token()
+                } else {
+                    self.single(TokenKind::Slash)
+                }
+            }
+            '%' => self.single(TokenKind::Percent),
+            '&' => self.single(TokenKind::Ampersand),
+            '@' => self.single(TokenKind::At),
+            '#' => self.single(TokenKind::Sharp),
+            '.' => self.single(TokenKind::Dot),
+            ',' => self.single(TokenKind::Comma),
+            ':' => self.double(TokenKind::Colon, ':', TokenKind::DoubleColon),
+            ';' => self.single(TokenKind::Semicolon),
+            '(' => {
+                self.nested_indent += 1;
+                self.single(TokenKind::LParen)
+            }
+            ')' => {
+                self.nested_indent -= 1;
+                self.single(TokenKind::RParen)
+            }
+            '{' => {
+                self.nested_indent += 1;
+                self.single(TokenKind::LBrace)
+            }
+            '}' => {
+                self.nested_indent -= 1;
+                self.single(TokenKind::RBrace)
+            }
+            '[' => {
+                self.nested_indent += 1;
+                self.single(TokenKind::LBracket)
+            }
+            ']' => {
+                self.nested_indent -= 1;
+                self.single(TokenKind::RBracket)
+            }
+            '<' => self.double(TokenKind::LT, '=', TokenKind::LTE),
+            '>' => self.double(TokenKind::GT, '=', TokenKind::GTE),
+            '\0' => {
+                self.tokens
+                    .push(Token::new(TokenKind::EOF, self.span_from(start_position)));
+                Ok(())
+            }
+            c => Err(LexingError::unexpected_character(
+                c.to_string(),
+                self.span_from(start_position),
+            )),
         }
     }
 }
