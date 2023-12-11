@@ -3,7 +3,7 @@ use super::{
     Expression, Identifier,
 };
 use crate::{
-    display, CodegenType, Compiler, DisplayNode, ExpressionCodegen, FunctionType, Position,
+    display, CodegenType, Compiler, DisplayNode, ExpressionCodegen, FunctionType, Span,
     StatementCodegen, StructType,
 };
 use inkwell::{types::BasicType, IntPredicate};
@@ -72,7 +72,7 @@ pub struct LetStatement {
     pub name: Identifier,
     pub ty: Option<AstType>,
     pub value: Expression,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl StatementCodegen for LetStatement {
@@ -100,7 +100,7 @@ impl StatementCodegen for LetStatement {
             self.name.identifier.clone(),
             value.ty,
             alloca,
-            self.name.position,
+            self.name.span,
         )?;
 
         Ok(())
@@ -127,7 +127,7 @@ pub struct FunctionDefinition {
     pub parameters: Vec<Parameter>,
     pub return_type: AstType,
     pub body: BlockExpression,
-    pub position: Position,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -182,7 +182,7 @@ impl StatementCodegen for FunctionDefinition {
                 name: self.name.identifier.clone(),
                 parameters: parameters_codegen_type.clone(),
                 return_type: Box::new(return_type.clone()),
-                position: self.position,
+                span: self.span,
             },
         )?;
 
@@ -201,7 +201,7 @@ impl StatementCodegen for FunctionDefinition {
                 parameter_name.identifier.clone(),
                 parameters_codegen_type[i].clone(),
                 alloca,
-                parameter_name.position,
+                parameter_name.span,
             )?;
         }
 
@@ -226,7 +226,7 @@ impl StatementCodegen for FunctionDefinition {
         }
 
         if return_type != CodegenType::Void {
-            return Err(CompileError::function_must_return_a_value(self.position));
+            return Err(CompileError::function_must_return_a_value(self.span));
         }
 
         compiler.symbol_table = original_symbol_table;
@@ -258,7 +258,7 @@ pub struct ExternalFunctionDeclaration {
     pub name: Identifier,
     pub parameters: Vec<AstType>,
     pub return_type: AstType,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl StatementCodegen for ExternalFunctionDeclaration {
@@ -301,7 +301,7 @@ impl StatementCodegen for ExternalFunctionDeclaration {
                 name: self.name.identifier.clone(),
                 parameters: parameters_codegen_type.clone(),
                 return_type: Box::new(return_type),
-                position: self.position,
+                span: self.span,
             },
         )?;
 
@@ -329,7 +329,7 @@ impl DisplayNode for ExternalFunctionDeclaration {
 pub struct StructDeclaration {
     pub name: Identifier,
     pub fields: BTreeMap<String, AstType>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl StatementCodegen for StructDeclaration {
@@ -346,7 +346,7 @@ impl StatementCodegen for StructDeclaration {
         let struct_type = StructType {
             name: self.name.identifier.clone(),
             fields,
-            position: self.position,
+            span: self.span,
         };
         let struct_llvm_type = compiler
             .context
@@ -394,7 +394,7 @@ impl DisplayNode for StructDeclaration {
 #[derive(Debug, Clone)]
 pub struct ReturnStatement {
     pub value: Expression,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl StatementCodegen for ReturnStatement {
@@ -419,7 +419,7 @@ impl DisplayNode for ReturnStatement {
 pub struct TypeDeclaration {
     pub name: Identifier,
     pub ty: AstType,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl StatementCodegen for TypeDeclaration {
@@ -440,7 +440,7 @@ impl DisplayNode for TypeDeclaration {
 pub struct Declaration {
     pub name: Identifier,
     pub ty: AstType,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl StatementCodegen for Declaration {
@@ -461,7 +461,7 @@ impl DisplayNode for Declaration {
 pub struct While {
     pub condition: Expression,
     pub body: BlockExpression,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl StatementCodegen for While {

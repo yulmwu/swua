@@ -1,6 +1,6 @@
 use crate::{
     codegen::{symbol_table::SymbolTable, CompileError, CompileResult, Identifier},
-    Position,
+    Span,
 };
 use inkwell::{
     context::Context,
@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, fmt};
 #[derive(Debug, PartialEq, Clone)]
 pub struct AstType {
     pub kind: AstTypeKind,
-    pub position: Position,
+    pub span: Span,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -33,7 +33,7 @@ pub enum AstTypeKind {
 pub struct AstArrayTypeKind {
     pub ty: Box<AstType>,
     pub len: Option<usize>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl AstTypeKind {
@@ -47,7 +47,7 @@ impl AstTypeKind {
             AstTypeKind::Array(array_type) => CodegenType::Array(ArrayType {
                 ty: Box::new(array_type.ty.kind.to_codegen_type(symbol_table)?),
                 len: array_type.len,
-                position: array_type.position,
+                span: array_type.span,
             }),
             AstTypeKind::TypeAlias(_) => todo!(),
             AstTypeKind::Struct(name) => {
@@ -56,7 +56,7 @@ impl AstTypeKind {
                     None => {
                         return Err(CompileError::struct_not_found(
                             name.identifier.clone(),
-                            name.position,
+                            name.span,
                         ))
                     }
                 };
@@ -111,7 +111,7 @@ pub enum CodegenType {
 pub struct ArrayType {
     pub ty: Box<CodegenType>,
     pub len: Option<usize>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl PartialEq for ArrayType {
@@ -124,7 +124,7 @@ impl PartialEq for ArrayType {
 pub struct StructType {
     pub name: String,
     pub fields: BTreeMap<String, (usize, CodegenType)>,
-    pub position: Position,
+    pub span: Span,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -132,7 +132,7 @@ pub struct FunctionType {
     pub name: String,
     pub parameters: Vec<CodegenType>,
     pub return_type: Box<CodegenType>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl CodegenType {
@@ -178,14 +178,10 @@ impl CodegenType {
         }
     }
 
-    pub fn size_of<'a>(
-        &self,
-        context: &'a Context,
-        position: Position,
-    ) -> CompileResult<IntValue<'a>> {
+    pub fn size_of<'a>(&self, context: &'a Context, span: Span) -> CompileResult<IntValue<'a>> {
         Ok(match self.to_llvm_type(context).size_of() {
             Some(size) => size,
-            None => return Err(CompileError::unknown_size(position)),
+            None => return Err(CompileError::unknown_size(span)),
         })
     }
 }

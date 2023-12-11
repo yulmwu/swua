@@ -2,7 +2,7 @@ use super::{
     symbol_table::SymbolTable, types::AstType, CompileError, CompileResult, Literal, Statement,
 };
 use crate::{
-    display, BinaryOperator, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Position,
+    display, BinaryOperator, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Span,
     StatementCodegen, UnaryOperator, Value,
 };
 use inkwell::values::{BasicMetadataValueEnum, BasicValue};
@@ -40,14 +40,14 @@ impl ExpressionCodegen for Expression {
     }
 }
 
-impl From<Expression> for Position {
+impl From<Expression> for Span {
     fn from(expression: Expression) -> Self {
         macro_rules! inner {
             ($($ident:ident)*) => {
                 match expression {
-                    Expression::Literal(literal) => Position::from(literal),
+                    Expression::Literal(literal) => Span::from(literal),
                     $(
-                        Expression::$ident(expression) => expression.position,
+                        Expression::$ident(expression) => expression.span,
                     )*
                 }
             };
@@ -78,7 +78,7 @@ pub struct BinaryExpression {
     pub left: Box<Expression>,
     pub operator: BinaryOperator,
     pub right: Box<Expression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for BinaryExpression {
@@ -97,22 +97,17 @@ impl BinaryExpression {
         let left = self.left.codegen(compiler)?;
         let left_ty = match left.ty {
             CodegenType::Struct(struct_type) => struct_type,
-            _ => return Err(CompileError::member_access_non_struct_type(self.position)),
+            _ => return Err(CompileError::member_access_non_struct_type(self.span)),
         };
 
         let right = match *self.right.clone() {
             Expression::Literal(Literal::Identifier(identifier)) => identifier,
-            _ => return Err(CompileError::expected("identifier", self.position)),
+            _ => return Err(CompileError::expected("identifier", self.span)),
         };
 
         let field = match left_ty.fields.get(&right.identifier) {
             Some(field) => field,
-            None => {
-                return Err(CompileError::field_not_found(
-                    right.identifier,
-                    right.position,
-                ))
-            }
+            None => return Err(CompileError::field_not_found(right.identifier, right.span)),
         };
         let field_ll_ty = field.1.to_llvm_type(compiler.context);
 
@@ -146,7 +141,7 @@ impl BinaryExpression {
             _ => {
                 return Err(CompileError::expected(
                     "int",
-                    Position::from(*self.left.clone()),
+                    Span::from(*self.left.clone()),
                 ))
             }
         };
@@ -156,7 +151,7 @@ impl BinaryExpression {
             _ => {
                 return Err(CompileError::expected(
                     "int",
-                    Position::from(*self.right.clone()),
+                    Span::from(*self.right.clone()),
                 ))
             }
         };
@@ -184,7 +179,7 @@ impl BinaryExpression {
             _ => {
                 return Err(CompileError::expected(
                     "int",
-                    Position::from(*self.left.clone()),
+                    Span::from(*self.left.clone()),
                 ))
             }
         };
@@ -194,7 +189,7 @@ impl BinaryExpression {
             _ => {
                 return Err(CompileError::expected(
                     "int",
-                    Position::from(*self.right.clone()),
+                    Span::from(*self.right.clone()),
                 ))
             }
         };
@@ -246,7 +241,7 @@ impl DisplayNode for BinaryExpression {
 pub struct UnaryExpression {
     pub operator: UnaryOperator,
     pub expression: Box<Expression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for UnaryExpression {
@@ -276,7 +271,7 @@ impl UnaryExpression {
                     .build_float_neg(expression.llvm_value.into_float_value(), "neg");
                 Value::new(result.into(), CodegenType::Float)
             }
-            _ => return Err(CompileError::expected("int or float", self.position)),
+            _ => return Err(CompileError::expected("int or float", self.span)),
         })
     }
 
@@ -285,7 +280,7 @@ impl UnaryExpression {
 
         let expression = match expression.ty {
             CodegenType::Boolean => expression.llvm_value.into_int_value(),
-            _ => return Err(CompileError::expected("boolean", self.position)),
+            _ => return Err(CompileError::expected("boolean", self.span)),
         };
 
         let result = compiler.builder.build_not(expression, "not");
@@ -304,7 +299,7 @@ impl DisplayNode for UnaryExpression {
 pub struct AssignExpression {
     pub expression: Box<Expression>,
     pub value: Box<Expression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for AssignExpression {
@@ -319,7 +314,7 @@ impl ExpressionCodegen for AssignExpression {
                             return Err(CompileError::type_mismatch(
                                 entry.1.clone(),
                                 value.ty,
-                                identifier.position,
+                                identifier.span,
                             ));
                         }
 
@@ -329,7 +324,7 @@ impl ExpressionCodegen for AssignExpression {
                     None => {
                         return Err(CompileError::identifier_not_found(
                             identifier.identifier,
-                            self.position,
+                            self.span,
                         ))
                     }
                 }
@@ -342,7 +337,7 @@ impl ExpressionCodegen for AssignExpression {
                     CodegenType::Array(array) => {
                         let index = match index.ty {
                             CodegenType::Int => index.llvm_value.into_int_value(),
-                            _ => return Err(CompileError::expected("int", self.position)),
+                            _ => return Err(CompileError::expected("int", self.span)),
                         };
                         let element_ll_ty = array.ty.to_llvm_type(compiler.context);
 
@@ -357,9 +352,7 @@ impl ExpressionCodegen for AssignExpression {
 
                         if *array.ty != value.ty {
                             return Err(CompileError::type_mismatch(
-                                *array.ty,
-                                value.ty,
-                                self.position,
+                                *array.ty, value.ty, self.span,
                             ));
                         }
 
@@ -377,26 +370,23 @@ impl ExpressionCodegen for AssignExpression {
                 left,
                 operator: BinaryOperator::Dot,
                 right,
-                position,
+                span,
             }) => {
                 let left = left.codegen(compiler)?;
                 let left_ty = match left.ty {
                     CodegenType::Struct(struct_type) => struct_type,
-                    _ => return Err(CompileError::member_access_non_struct_type(position)),
+                    _ => return Err(CompileError::member_access_non_struct_type(span)),
                 };
 
                 let right = match *right.clone() {
                     Expression::Literal(Literal::Identifier(identifier)) => identifier,
-                    _ => return Err(CompileError::expected("identifier", position)),
+                    _ => return Err(CompileError::expected("identifier", span)),
                 };
 
                 let field = match left_ty.fields.get(&right.identifier) {
                     Some(field) => field,
                     None => {
-                        return Err(CompileError::field_not_found(
-                            right.identifier,
-                            right.position,
-                        ))
+                        return Err(CompileError::field_not_found(right.identifier, right.span))
                     }
                 };
 
@@ -413,7 +403,7 @@ impl ExpressionCodegen for AssignExpression {
                     return Err(CompileError::type_mismatch(
                         field.1.clone(),
                         value.ty,
-                        self.position,
+                        self.span,
                     ));
                 }
 
@@ -429,7 +419,7 @@ impl ExpressionCodegen for AssignExpression {
                             return Err(CompileError::type_mismatch(
                                 *ty,
                                 value.ty,
-                                dereference.position,
+                                dereference.span,
                             ));
                         }
 
@@ -439,10 +429,10 @@ impl ExpressionCodegen for AssignExpression {
                         );
                         value
                     }
-                    _ => return Err(CompileError::expected("pointer", self.position)),
+                    _ => return Err(CompileError::expected("pointer", self.span)),
                 }
             }
-            _ => return Err(CompileError::cannot_be_assigned(self.position)),
+            _ => return Err(CompileError::cannot_be_assigned(self.span)),
         })
     }
 }
@@ -458,7 +448,7 @@ impl DisplayNode for AssignExpression {
 #[derive(Debug, Clone)]
 pub struct BlockExpression {
     pub statements: Vec<Statement>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for BlockExpression {
@@ -501,14 +491,14 @@ pub struct IfExpression {
     pub condition: Box<Expression>,
     pub consequence: BlockExpression,
     pub alternative: Option<BlockExpression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for IfExpression {
     fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
         let condition = self.condition.codegen(compiler)?;
         if condition.ty != CodegenType::Boolean {
-            return Err(CompileError::expected("boolean", self.position));
+            return Err(CompileError::expected("boolean", self.span));
         }
 
         let function = compiler
@@ -542,11 +532,7 @@ impl ExpressionCodegen for IfExpression {
                 let else_ = expr.codegen(compiler)?;
 
                 if then.ty != else_.ty {
-                    return Err(CompileError::type_mismatch(
-                        then.ty,
-                        else_.ty,
-                        self.position,
-                    ));
+                    return Err(CompileError::type_mismatch(then.ty, else_.ty, self.span));
                 }
 
                 else_
@@ -596,7 +582,7 @@ impl DisplayNode for IfExpression {
 pub struct CallExpression {
     pub function: Box<Expression>,
     pub arguments: Vec<Expression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for CallExpression {
@@ -608,7 +594,7 @@ impl ExpressionCodegen for CallExpression {
                     None => {
                         return Err(CompileError::function_not_found(
                             identifier.identifier,
-                            identifier.position,
+                            identifier.span,
                         ))
                     }
                 };
@@ -617,21 +603,21 @@ impl ExpressionCodegen for CallExpression {
                     None => {
                         return Err(CompileError::function_not_found(
                             identifier.identifier,
-                            identifier.position,
+                            identifier.span,
                         ))
                     }
                 };
 
                 (value, function)
             }
-            _ => return Err(CompileError::call_non_function_type(self.position)),
+            _ => return Err(CompileError::call_non_function_type(self.span)),
         };
 
         if self.arguments.len() != entry.1.parameters.len() {
             return Err(CompileError::wrong_number_of_arguments(
                 entry.1.parameters.len(),
                 self.arguments.len(),
-                self.position,
+                self.span,
             ));
         }
 
@@ -686,7 +672,7 @@ impl DisplayNode for CallExpression {
 pub struct IndexExpression {
     pub left: Box<Expression>,
     pub index: Box<Expression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for IndexExpression {
@@ -698,7 +684,7 @@ impl ExpressionCodegen for IndexExpression {
             CodegenType::Array(array) => {
                 let index = match index.ty {
                     CodegenType::Int => index.llvm_value.into_int_value(),
-                    _ => return Err(CompileError::expected("int", self.position)),
+                    _ => return Err(CompileError::expected("int", self.span)),
                 };
                 let element_ll_ty = array.ty.to_llvm_type(compiler.context);
 
@@ -739,7 +725,7 @@ impl DisplayNode for IndexExpression {
 #[derive(Debug, Clone)]
 pub struct TypeofExpression {
     pub expression: Box<Expression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for TypeofExpression {
@@ -781,7 +767,7 @@ impl DisplayNode for TypeofExpression {
 #[derive(Debug, Clone)]
 pub struct SizeofExpression {
     pub expression: Box<Expression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for SizeofExpression {
@@ -792,17 +778,17 @@ impl ExpressionCodegen for SizeofExpression {
             CodegenType::Array(array_type) => {
                 let length = match array_type.len {
                     Some(length) => length,
-                    _ => return Err(CompileError::unknown_size(array_type.position)),
+                    _ => return Err(CompileError::unknown_size(array_type.span)),
                 };
                 let length = compiler.context.i64_type().const_int(length as u64, false);
 
                 compiler.builder.build_int_mul(
-                    array_type.ty.size_of(compiler.context, self.position)?,
+                    array_type.ty.size_of(compiler.context, self.span)?,
                     length,
                     "array_size",
                 )
             }
-            ty => ty.size_of(compiler.context, self.position)?,
+            ty => ty.size_of(compiler.context, self.span)?,
         };
 
         Ok(Value::new(size.as_basic_value_enum(), CodegenType::Int))
@@ -820,7 +806,7 @@ impl DisplayNode for SizeofExpression {
 pub struct CastExpression {
     pub expression: Box<Expression>,
     pub cast_ty: AstType,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for CastExpression {
@@ -854,7 +840,7 @@ impl ExpressionCodegen for CastExpression {
                         "cast",
                     )
                     .as_basic_value_enum(),
-                _ => return Err(CompileError::expected("float", self.position)),
+                _ => return Err(CompileError::expected("float", self.span)),
             },
             CodegenType::Float => match value.ty {
                 CodegenType::Int => compiler
@@ -865,7 +851,7 @@ impl ExpressionCodegen for CastExpression {
                         "cast",
                     )
                     .as_basic_value_enum(),
-                _ => return Err(CompileError::expected("int", self.position)),
+                _ => return Err(CompileError::expected("int", self.span)),
             },
             CodegenType::Pointer(_) => match value.ty {
                 CodegenType::Int => compiler
@@ -876,9 +862,9 @@ impl ExpressionCodegen for CastExpression {
                         "cast",
                     )
                     .as_basic_value_enum(),
-                _ => return Err(CompileError::expected("int", self.position)),
+                _ => return Err(CompileError::expected("int", self.span)),
             },
-            _ => return Err(CompileError::expected("int or float", self.position)),
+            _ => return Err(CompileError::expected("int or float", self.span)),
         };
 
         Ok(Value::new(result, ty))
@@ -895,7 +881,7 @@ impl DisplayNode for CastExpression {
 #[derive(Debug, Clone)]
 pub struct PointerExpression {
     pub expression: Box<Expression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for PointerExpression {
@@ -907,7 +893,7 @@ impl ExpressionCodegen for PointerExpression {
                     None => {
                         return Err(CompileError::identifier_not_found(
                             identifier.identifier,
-                            identifier.position,
+                            identifier.span,
                         ))
                     }
                 };
@@ -925,7 +911,7 @@ impl ExpressionCodegen for PointerExpression {
                     CodegenType::Array(array) => {
                         let index = match index.ty {
                             CodegenType::Int => index.llvm_value.into_int_value(),
-                            _ => return Err(CompileError::expected("int", self.position)),
+                            _ => return Err(CompileError::expected("int", self.span)),
                         };
                         let element_ll_ty = array.ty.to_llvm_type(compiler.context);
 
@@ -952,26 +938,23 @@ impl ExpressionCodegen for PointerExpression {
                 left,
                 operator: BinaryOperator::Dot,
                 right,
-                position,
+                span,
             }) => {
                 let left = left.codegen(compiler)?;
                 let left_ty = match left.ty {
                     CodegenType::Struct(struct_type) => struct_type,
-                    _ => return Err(CompileError::member_access_non_struct_type(position)),
+                    _ => return Err(CompileError::member_access_non_struct_type(span)),
                 };
 
                 let right = match *right.clone() {
                     Expression::Literal(Literal::Identifier(identifier)) => identifier,
-                    _ => return Err(CompileError::expected("identifier", position)),
+                    _ => return Err(CompileError::expected("identifier", span)),
                 };
 
                 let field = match left_ty.fields.get(&right.identifier) {
                     Some(field) => field,
                     None => {
-                        return Err(CompileError::field_not_found(
-                            right.identifier,
-                            right.position,
-                        ))
+                        return Err(CompileError::field_not_found(right.identifier, right.span))
                     }
                 };
 
@@ -1014,7 +997,7 @@ impl DisplayNode for PointerExpression {
 #[derive(Debug, Clone)]
 pub struct DereferenceExpression {
     pub expression: Box<Expression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for DereferenceExpression {
@@ -1030,7 +1013,7 @@ impl ExpressionCodegen for DereferenceExpression {
                 );
                 Ok(Value::new(value, *ty))
             }
-            _ => Err(CompileError::expected("pointer", self.position)),
+            _ => Err(CompileError::expected("pointer", self.span)),
         }
     }
 }

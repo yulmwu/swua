@@ -1,6 +1,6 @@
 use super::{types::ArrayType, CompileError, CompileResult, Expression};
 use crate::{
-    display, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Position, StructType, Value,
+    display, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Span, StructType, Value,
 };
 use inkwell::{
     types::BasicType,
@@ -34,13 +34,13 @@ impl ExpressionCodegen for Literal {
     }
 }
 
-impl From<Literal> for Position {
+impl From<Literal> for Span {
     fn from(literal: Literal) -> Self {
         macro_rules! inner {
             ($($ident:ident)*) => {
                 match literal {
                     $(
-                        Literal::$ident(literal) => literal.position,
+                        Literal::$ident(literal) => literal.span,
                     )*
                 }
             };
@@ -69,7 +69,7 @@ impl DisplayNode for Literal {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Identifier {
     pub identifier: String,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for Identifier {
@@ -80,7 +80,7 @@ impl ExpressionCodegen for Identifier {
             None => {
                 return Err(CompileError::identifier_not_found(
                     self.identifier.clone(),
-                    self.position,
+                    self.span,
                 ))
             }
         };
@@ -105,7 +105,7 @@ impl DisplayNode for Identifier {
 #[derive(Debug, Clone)]
 pub struct IntLiteral {
     pub value: i64,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for IntLiteral {
@@ -130,7 +130,7 @@ impl DisplayNode for IntLiteral {
 #[derive(Debug, Clone)]
 pub struct FloatLiteral {
     pub value: f64,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for FloatLiteral {
@@ -151,7 +151,7 @@ impl DisplayNode for FloatLiteral {
 #[derive(Debug, Clone)]
 pub struct BooleanLiteral {
     pub value: bool,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for BooleanLiteral {
@@ -176,7 +176,7 @@ impl DisplayNode for BooleanLiteral {
 #[derive(Debug, Clone)]
 pub struct StringLiteral {
     pub value: String,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for StringLiteral {
@@ -201,7 +201,7 @@ impl DisplayNode for StringLiteral {
 #[derive(Debug, Clone)]
 pub struct ArrayLiteral {
     pub elements: Vec<Expression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for ArrayLiteral {
@@ -227,7 +227,7 @@ impl ExpressionCodegen for ArrayLiteral {
             Some(ty) => ty,
             None => {
                 return Err(CompileError::array_must_have_at_least_one_element(
-                    self.position,
+                    self.span,
                 ))
             }
         };
@@ -261,7 +261,7 @@ impl ExpressionCodegen for ArrayLiteral {
             CodegenType::Array(ArrayType {
                 ty: Box::new(array_type),
                 len: Some(values.len()),
-                position: self.position,
+                span: self.span,
             }),
         ))
     }
@@ -284,7 +284,7 @@ impl DisplayNode for ArrayLiteral {
 pub struct StructLiteral {
     pub name: Identifier,
     pub fields: BTreeMap<String, Expression>,
-    pub position: Position,
+    pub span: Span,
 }
 
 impl ExpressionCodegen for StructLiteral {
@@ -296,7 +296,7 @@ impl ExpressionCodegen for StructLiteral {
             None => {
                 return Err(CompileError::struct_not_found(
                     self.name.identifier.clone(),
-                    self.position,
+                    self.span,
                 ))
             }
         };
@@ -305,7 +305,7 @@ impl ExpressionCodegen for StructLiteral {
             return Err(CompileError::wrong_number_of_fields(
                 struct_type.fields.len(),
                 self.fields.len(),
-                self.position,
+                self.span,
             ));
         }
 
@@ -318,7 +318,7 @@ impl ExpressionCodegen for StructLiteral {
 
             let field_type = match struct_type.fields.get(val.0) {
                 Some((_, ty)) => ty.clone(),
-                None => return Err(CompileError::field_not_found(val.0.clone(), self.position)),
+                None => return Err(CompileError::field_not_found(val.0.clone(), self.span)),
             };
 
             if field_type != value.ty {
@@ -354,7 +354,7 @@ impl ExpressionCodegen for StructLiteral {
             CodegenType::Struct(StructType {
                 name: self.name.identifier.clone(),
                 fields: feilds_type,
-                position: self.position,
+                span: self.span,
             }),
         ))
     }

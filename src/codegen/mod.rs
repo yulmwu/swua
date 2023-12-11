@@ -11,14 +11,14 @@ pub mod types;
 
 use crate::{
     parser::{ParsingError, ParsingErrorKind},
-    Position,
+    Span,
 };
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompileError {
     pub kind: CompileErrorKind,
-    pub position: Position,
+    pub span: Span,
 }
 
 macro_rules! impl_error_kind {
@@ -44,25 +44,25 @@ macro_rules! impl_error_kind {
         }
 
         impl CompileError {
-            pub fn new(kind: CompileErrorKind, position: Position) -> Self {
-                Self { kind, position }
+            pub fn new(kind: CompileErrorKind, span: Span) -> Self {
+                Self { kind, span }
             }
 
-            pub fn parsing_error(kind: ParsingErrorKind, position: Position) -> Self {
-                Self::new(CompileErrorKind::ParsingError(kind), position)
+            pub fn parsing_error(kind: ParsingErrorKind, span: Span) -> Self {
+                Self::new(CompileErrorKind::ParsingError(kind), span)
             }
 
             $(
-                pub fn $fn<$($gen$(: $gen_1$(+$gen_n)*)?)?>($($($arg: $param_ty,)*)? position: Position) -> Self
+                pub fn $fn<$($gen$(: $gen_1$(+$gen_n)*)?)?>($($($arg: $param_ty,)*)? span: Span) -> Self
                 {
-                    Self::new(CompileErrorKind::$ident$(($($arg.to_string()),*))?, position)
+                    Self::new(CompileErrorKind::$ident$(($($arg.to_string()),*))?, span)
                 }
             )*
         }
 
         impl From<ParsingError> for CompileError {
             fn from(error: ParsingError) -> Self {
-                Self::new(CompileErrorKind::ParsingError(error.kind), error.position)
+                Self::new(CompileErrorKind::ParsingError(error.kind), error.span)
             }
         }
     };

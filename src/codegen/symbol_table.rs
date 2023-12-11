@@ -3,7 +3,7 @@ use crate::{
         types::{CodegenType, FunctionType, StructType},
         CompileError, CompileResult,
     },
-    Position,
+    Span,
 };
 use inkwell::{types, values::PointerValue};
 use std::collections::BTreeMap;
@@ -38,10 +38,10 @@ impl<'a> SymbolTable<'a> {
         name: String,
         ty: CodegenType,
         value: PointerValue<'a>,
-        position: Position,
+        span: Span,
     ) -> CompileResult<()> {
         if self.entries.symbols.contains_key(&name) {
-            return Err(CompileError::variable_already_declared(name, position));
+            return Err(CompileError::variable_already_declared(name, span));
         }
 
         self.entries.symbols.insert(name, (value, ty));
@@ -57,7 +57,7 @@ impl<'a> SymbolTable<'a> {
         if self.entries.functions.contains_key(&name) {
             return Err(CompileError::function_already_declared(
                 name,
-                function_type.position,
+                function_type.span,
             ));
         }
 
@@ -74,7 +74,7 @@ impl<'a> SymbolTable<'a> {
         if self.entries.structs.contains_key(&name) {
             return Err(CompileError::struct_already_declared(
                 name,
-                struct_type.position,
+                struct_type.span,
             ));
         }
 
