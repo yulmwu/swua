@@ -122,9 +122,7 @@ where
         let mut statements = Vec::new();
 
         while self.current_token.kind != TokenKind::EOF {
-            if self.current_token.kind == TokenKind::Newline
-                || self.current_token.kind == TokenKind::Semicolon
-            {
+            if self.current_token.kind == TokenKind::Newline {
                 self.next_token();
                 continue;
             }
@@ -155,8 +153,11 @@ where
         }
     }
 
-    fn is_terminated(&self, kind: TokenKind) -> bool {
-        kind == TokenKind::Semicolon || kind == TokenKind::Newline || kind == TokenKind::EOF
+    fn is_expression_terminated(&self, kind: TokenKind) -> bool {
+        matches!(
+            kind,
+            TokenKind::Semicolon | TokenKind::Newline | TokenKind::EOF
+        )
     }
 
     fn current_priority(&self) -> Priority {
@@ -219,11 +220,15 @@ where
         let expression = self.parse_expression(Priority::Lowest)?;
         self.next_token();
 
-        if !self.is_terminated(self.current_token.kind.clone()) {
+        if !self.is_expression_terminated(self.current_token.kind.clone()) {
             return Err(ParsingError::unexpected_token(
                 self.current_token.kind.to_string(),
                 self.span,
             ));
+        }
+
+        if self.current_token.kind == TokenKind::Semicolon {
+            self.next_token();
         }
 
         Ok(Statement::Expression(expression))
@@ -325,7 +330,9 @@ where
             _ => None,
         };
 
-        if left_expression.is_none() && self.current_token.kind != TokenKind::Newline {
+        if left_expression.is_none()
+            && !self.is_expression_terminated(self.current_token.kind.clone())
+        {
             return Err(ParsingError::unexpected_token(
                 self.current_token.kind.to_string(),
                 self.span,
@@ -336,7 +343,9 @@ where
             ParsingError::unexpected_token(self.current_token.kind.to_string(), self.span)
         })?;
 
-        while !self.is_terminated(self.peek_token.kind.clone()) && priority < self.peek_priority() {
+        while !self.is_expression_terminated(self.peek_token.kind.clone())
+            && priority < self.peek_priority()
+        {
             self.next_token();
 
             left_expression = match self.current_token.kind {
