@@ -147,7 +147,7 @@ where
         } else {
             Err(ParsingError::expected_next_token(
                 expected.to_string(),
-                self.peek_token.kind.to_string(),
+                self.current_token.kind.to_string(),
                 self.current_token.span,
             ))
         }
@@ -185,7 +185,37 @@ where
     }
 
     fn parse_let_statement(&mut self) -> ParseResult<LetStatement> {
-        todo!()
+        self.next_token();
+
+        let identifier = identifier! { self };
+        self.next_token();
+
+        let ty = if self.current_token.kind == TokenKind::Colon {
+            self.next_token();
+
+            Some(self.parse_ty()?)
+        } else {
+            None
+        };
+
+        self.expect_token(TokenKind::Assign)?;
+
+        let value = self.parse_expression(Priority::Lowest)?;
+        self.next_token();
+
+        if self.current_token.kind == TokenKind::Semicolon {
+            self.next_token();
+        }
+
+        Ok(LetStatement {
+            name: Identifier {
+                identifier: identifier.to_string(),
+                span: self.span,
+            },
+            ty,
+            value,
+            span: self.span,
+        })
     }
 
     fn parse_function_definition(&mut self) -> ParseResult<FunctionDefinition> {
@@ -521,6 +551,87 @@ where
     }
 
     fn parse_ty(&mut self) -> ParseResult<AstType> {
-        todo!()
+        let mut ty = match &self.current_token.kind {
+            TokenKind::IntType => Ok(AstTypeKind::Int),
+            TokenKind::FloatType => Ok(AstTypeKind::Float),
+            TokenKind::StringType => Ok(AstTypeKind::String),
+            TokenKind::BooleanType => Ok(AstTypeKind::Boolean),
+            TokenKind::VoidType => Ok(AstTypeKind::Void),
+            TokenKind::Function => todo!(),
+            TokenKind::At => {
+                self.next_token();
+
+                Ok(AstTypeKind::TypeAlias(Identifier {
+                    identifier: identifier! { self },
+                    span: self.span,
+                }))
+            }
+            TokenKind::Identifier(identifier) => Ok(AstTypeKind::Struct(Identifier {
+                identifier: identifier.to_string(),
+                span: self.span,
+            })),
+            _ => Err(ParsingError::unexpected_token(
+                self.current_token.kind.to_string(),
+                self.span,
+            )),
+        };
+
+        if self.peek_token.kind == TokenKind::LBracket {
+            self.next_token();
+            self.next_token();
+
+            let mut size = None;
+
+            if self.current_token.kind != TokenKind::RBracket {
+                let expression = self.parse_expression(Priority::Lowest)?;
+                self.next_token();
+
+                if self.current_token.kind != TokenKind::RBracket {
+                    return Err(ParsingError::expected_next_token(
+                        TokenKind::RBracket.to_string(),
+                        self.current_token.kind.to_string(),
+                        self.span,
+                    ));
+                }
+
+                match expression {
+                    Expression::Literal(Literal::Int(int)) => {
+                        size = Some(int.value as usize);
+                    }
+                    _ => {
+                        return Err(ParsingError::expected_next_token(
+                            "Int".to_string(),
+                            self.current_token.kind.to_string(),
+                            self.span,
+                        ));
+                    }
+                }
+            }
+
+            ty = Ok(AstTypeKind::Array(AstArrayTypeKind {
+                ty: Box::new(AstType {
+                    kind: ty?,
+                    span: self.span,
+                }),
+                len: size,
+                span: self.span,
+            }));
+        }
+
+        if self.peek_token.kind == TokenKind::Asterisk {
+            self.next_token();
+
+            ty = Ok(AstTypeKind::Pointer(Box::new(AstType {
+                kind: ty?,
+                span: self.span,
+            })));
+        }
+
+        self.next_token();
+
+        Ok(AstType {
+            kind: ty?,
+            span: self.span,
+        })
     }
 }
