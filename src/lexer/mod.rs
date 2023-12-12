@@ -282,8 +282,8 @@ impl Lexer {
     }
 
     fn single(&mut self, kind: TokenKind) -> Result<()> {
-        self.read_char();
         let token = Token::new(kind, self.span_from(self.current_position));
+        self.read_char();
         self.tokens.push(token);
         Ok(())
     }
