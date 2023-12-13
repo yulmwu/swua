@@ -67,6 +67,11 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new(input: String) -> Lexer {
+        let input = input
+            .split('\n')
+            .map(|s| s.trim_end())
+            .collect::<Vec<_>>()
+            .join("\n");
         let mut t = Lexer {
             input,
             tokens: Vec::new(),
@@ -90,6 +95,17 @@ impl Lexer {
         self.current_position.column += 1;
     }
 
+    fn peek_char(&self) -> char {
+        if self.read_position >= self.input.len() {
+            '\0'
+        } else {
+            self.input[self.read_position..]
+                .chars()
+                .next()
+                .unwrap_or('\0')
+        }
+    }
+
     fn span_from(&self, start: Position) -> Span {
         Span::new(start, self.current_position)
     }
@@ -102,6 +118,7 @@ impl Lexer {
                 break;
             }
         }
+
         Ok(())
     }
 
@@ -124,6 +141,10 @@ impl Lexer {
                 }
                 _ => break,
             }
+        }
+
+        if indent == 0 && self.current_char == '\n' && self.peek_char() != '\0' {
+            return Ok(());
         }
 
         use std::cmp::Ordering::*;
