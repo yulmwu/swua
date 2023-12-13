@@ -1,3 +1,11 @@
-let x = 10
+fn x(a int, b int): int =
+    let add = a + b
 
-let y: int = 30
+    fn y(): int =
+        add
+
+fn x(): int =
+    a
+
+    b;
+    return 1

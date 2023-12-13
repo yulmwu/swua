@@ -28,7 +28,9 @@ fn compile<'a>(
     let mut lexer = Lexer::new(source_code);
     lexer.tokenize().map_err(ParsingError::from)?;
 
-    println!("{:#?}", lexer.tokens);
+    for token in &lexer.tokens {
+        println!("{}", token);
+    }
 
     let program = Parser::new(lexer.tokens.into_iter())
         .parse_program()
