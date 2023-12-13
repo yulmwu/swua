@@ -1,9 +1,7 @@
-use super::{
-    symbol_table::SymbolTable, types::AstType, CompileError, CompileResult, Literal, Statement,
-};
+use super::{types::AstType, Block, CompileError, CompileResult, Literal};
 use crate::{
-    display, BinaryOperator, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Span,
-    StatementCodegen, UnaryOperator, Value,
+    BinaryOperator, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Span, UnaryOperator,
+    Value,
 };
 use inkwell::values::{BasicMetadataValueEnum, BasicValue};
 use std::fmt;
@@ -14,7 +12,7 @@ pub enum Expression {
     Binary(BinaryExpression),
     Unary(UnaryExpression),
     Assign(AssignExpression),
-    Block(BlockExpression),
+    Block(Block),
     If(IfExpression),
     Call(CallExpression),
     Index(IndexExpression),
@@ -446,51 +444,10 @@ impl DisplayNode for AssignExpression {
 }
 
 #[derive(Debug, Clone)]
-pub struct BlockExpression {
-    pub statements: Vec<Statement>,
-    pub span: Span,
-}
-
-impl ExpressionCodegen for BlockExpression {
-    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
-        let original_symbol_table = compiler.symbol_table.clone();
-        compiler.symbol_table = SymbolTable::new_with_parent(compiler.symbol_table.clone());
-
-        for statement in self.statements.clone() {
-            if let Statement::Return(return_statement) = statement {
-                let value = return_statement.value.codegen(compiler)?;
-                compiler.symbol_table = original_symbol_table;
-                return Ok(value);
-            }
-
-            statement.codegen(compiler)?;
-        }
-
-        compiler.symbol_table = original_symbol_table;
-
-        Ok(Value::new(
-            compiler.context.i64_type().const_int(0, false).into(),
-            CodegenType::Void,
-        ))
-    }
-}
-
-impl DisplayNode for BlockExpression {
-    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
-        writeln!(f, "{{")?;
-        for statement in self.statements.clone() {
-            statement.display(f, indent + 1)?;
-        }
-        display::indent(f, indent)?;
-        write!(f, "}}")
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct IfExpression {
     pub condition: Box<Expression>,
-    pub consequence: BlockExpression,
-    pub alternative: Option<BlockExpression>,
+    pub consequence: Block,
+    pub alternative: Option<Block>,
     pub span: Span,
 }
 

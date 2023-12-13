@@ -1,10 +1,9 @@
 use super::{
-    symbol_table::SymbolTable, types::AstType, BlockExpression, CompileError, CompileResult,
-    Expression, Identifier,
+    symbol_table::SymbolTable, types::AstType, CompileError, CompileResult, Expression, Identifier,
 };
 use crate::{
     display, CodegenType, Compiler, DisplayNode, ExpressionCodegen, FunctionType, Span,
-    StatementCodegen, StructType,
+    StatementCodegen, StructType, Value,
 };
 use inkwell::{types::BasicType, IntPredicate};
 use std::{collections::BTreeMap, fmt};
@@ -126,7 +125,7 @@ pub struct FunctionDefinition {
     pub name: Identifier,
     pub parameters: Vec<Parameter>,
     pub return_type: AstType,
-    pub body: BlockExpression,
+    pub body: Block,
     pub span: Span,
 }
 
@@ -460,7 +459,7 @@ impl DisplayNode for Declaration {
 #[derive(Debug, Clone)]
 pub struct While {
     pub condition: Expression,
-    pub body: BlockExpression,
+    pub body: Block,
     pub span: Span,
 }
 
@@ -517,6 +516,48 @@ impl DisplayNode for While {
         self.condition.display(f, indent + 1)?;
         writeln!(f, " {{")?;
         self.body.display(f, indent + 1)?;
+        display::indent(f, indent)?;
+        write!(f, "}}")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Block {
+    pub statements: Vec<Statement>,
+    pub span: Span,
+}
+
+// not a expression
+impl ExpressionCodegen for Block {
+    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let original_symbol_table = compiler.symbol_table.clone();
+        compiler.symbol_table = SymbolTable::new_with_parent(compiler.symbol_table.clone());
+
+        for statement in self.statements.clone() {
+            if let Statement::Return(return_statement) = statement {
+                let value = return_statement.value.codegen(compiler)?;
+                compiler.symbol_table = original_symbol_table;
+                return Ok(value);
+            }
+
+            statement.codegen(compiler)?;
+        }
+
+        compiler.symbol_table = original_symbol_table;
+
+        Ok(Value::new(
+            compiler.context.i64_type().const_int(0, false).into(),
+            CodegenType::Void,
+        ))
+    }
+}
+
+impl DisplayNode for Block {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        writeln!(f, "{{")?;
+        for statement in self.statements.clone() {
+            statement.display(f, indent + 1)?;
+        }
         display::indent(f, indent)?;
         write!(f, "}}")
     }
