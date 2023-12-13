@@ -3,8 +3,8 @@
 use crate::{
     codegen::{
         types::{AstArrayTypeKind, AstType, AstTypeKind},
-        ArrayLiteral, AssignExpression, BinaryExpression, BlockExpression, BooleanLiteral,
-        CallExpression, CastExpression, Declaration, DereferenceExpression, Expression,
+        ArrayLiteral, AssignExpression, BinaryExpression, Block, BooleanLiteral, CallExpression,
+        CastExpression, Declaration, DereferenceExpression, Expression,
         ExternalFunctionDeclaration, FloatLiteral, FunctionDefinition, Identifier, IfExpression,
         IndexExpression, IntLiteral, LetStatement, Literal, Parameter, PointerExpression,
         ReturnStatement, SizeofExpression, Statement, StringLiteral, StructDeclaration,
@@ -69,7 +69,7 @@ macro_rules! impl_error_kind {
 
 impl_error_kind! {
     ExpectedNextToken(expected: String, got: String): expected_next_token<T: ToString>(T, T) => "expected `{expected}` but got `{got}`",
-    ExpectedTy(expected: String): expected_ty<T: ToString>(T) => "expected type `{expected}`",
+    ExpectedType(expected: String): expected_ty<T: ToString>(T) => "expected type `{expected}`",
     ExpectedExpression(expected: String): expected_expression<T: ToString>(T) => "expected expression `{expected}`",
     UnexpectedToken(token: String): unexpected_token<T: ToString>(T) => "unexpected token `{token}`"
 }
@@ -153,11 +153,26 @@ where
         }
     }
 
-    fn is_expression_terminated(&self, kind: TokenKind) -> bool {
+    fn is_terminated(&self, kind: TokenKind) -> bool {
         matches!(
             kind,
             TokenKind::Semicolon | TokenKind::Newline | TokenKind::EOF
         )
+    }
+
+    fn expect_termination(&mut self) -> ParseResult<()> {
+        if !self.is_terminated(self.current_token.kind.clone()) {
+            return Err(ParsingError::unexpected_token(
+                self.current_token.kind.to_string(),
+                self.span,
+            ));
+        }
+
+        if self.current_token.kind == TokenKind::Semicolon {
+            self.next_token();
+        }
+
+        Ok(())
     }
 
     fn current_priority(&self) -> Priority {
@@ -219,7 +234,118 @@ where
     }
 
     fn parse_function_definition(&mut self) -> ParseResult<FunctionDefinition> {
-        todo!()
+        /*
+        fn x(a int, b int): int =
+            return a + b
+        */
+        self.next_token();
+
+        let name = identifier! { self };
+        self.next_token();
+
+        self.expect_token(TokenKind::LParen)?;
+
+        let mut parameters = Vec::new();
+
+        if self.current_token.kind != TokenKind::RParen {
+            let identifier = identifier! { self };
+            self.next_token();
+
+            let ty = self.parse_ty()?;
+            self.next_token();
+
+            parameters.push(Parameter {
+                name: Identifier {
+                    identifier: identifier.to_string(),
+                    span: self.span,
+                },
+                ty,
+            });
+
+            if self.current_token.kind == TokenKind::Comma {
+                self.next_token();
+            }
+
+            while self.current_token.kind != TokenKind::RParen {
+                let identifier = identifier! { self };
+                self.next_token();
+
+                let ty = self.parse_ty()?;
+
+                parameters.push(Parameter {
+                    name: Identifier {
+                        identifier: identifier.to_string(),
+                        span: self.span,
+                    },
+                    ty,
+                });
+
+                if self.current_token.kind == TokenKind::RParen {
+                    break;
+                }
+
+                self.expect_token(TokenKind::Comma)?;
+            }
+
+            if self.current_token.kind != TokenKind::RParen {
+                return Err(ParsingError::expected_next_token(
+                    TokenKind::RParen.to_string(),
+                    self.current_token.kind.to_string(),
+                    self.span,
+                ));
+            }
+        }
+
+        self.next_token();
+
+        self.expect_token(TokenKind::Colon)?;
+
+        let return_type = self.parse_ty()?;
+
+        self.expect_token(TokenKind::Assign)?;
+
+        let body = self.parse_block()?;
+        self.next_token();
+
+        Ok(FunctionDefinition {
+            name: Identifier {
+                identifier: name.to_string(),
+                span: self.span,
+            },
+            parameters,
+            return_type,
+            body,
+            span: self.span,
+        })
+    }
+
+    fn parse_block(&mut self) -> ParseResult<Block> {
+        self.next_token();
+        self.expect_token(TokenKind::Indent)?;
+
+        let mut statements = Vec::new();
+
+        while self.current_token.kind != TokenKind::Dedent
+            && self.current_token.kind != TokenKind::EOF
+        {
+            if self.current_token.kind == TokenKind::Newline {
+                self.next_token();
+                continue;
+            }
+
+            statements.push(self.parse_statement()?);
+        }
+
+        assert!(
+            self.current_token.kind == TokenKind::Dedent
+                || self.current_token.kind == TokenKind::EOF
+        );
+        // next token is always Newline or EOF
+
+        Ok(Block {
+            statements,
+            span: self.span,
+        })
     }
 
     fn parse_external_function_declaration(&mut self) -> ParseResult<ExternalFunctionDeclaration> {
@@ -227,7 +353,17 @@ where
     }
 
     fn parse_return_statement(&mut self) -> ParseResult<ReturnStatement> {
-        todo!()
+        self.next_token();
+
+        let expression = self.parse_expression(Priority::Lowest)?;
+        self.next_token();
+
+        self.expect_termination()?;
+
+        Ok(ReturnStatement {
+            value: expression,
+            span: self.span,
+        })
     }
 
     fn parse_type_statement(&mut self) -> ParseResult<TypeDeclaration> {
@@ -250,16 +386,7 @@ where
         let expression = self.parse_expression(Priority::Lowest)?;
         self.next_token();
 
-        if !self.is_expression_terminated(self.current_token.kind.clone()) {
-            return Err(ParsingError::unexpected_token(
-                self.current_token.kind.to_string(),
-                self.span,
-            ));
-        }
-
-        if self.current_token.kind == TokenKind::Semicolon {
-            self.next_token();
-        }
+        self.expect_termination()?;
 
         Ok(Statement::Expression(expression))
     }
@@ -320,7 +447,7 @@ where
 
                 Some(expression)
             }
-            TokenKind::LBrace => Some(Ok(Expression::Block(self.parse_block_expression()?))),
+            // TokenKind::LBrace => Some(Ok(Expression::Block(self.parse_block_expression()?))),
             TokenKind::LBracket => Some(Ok(Expression::Literal(Literal::Array(
                 self.parse_array_literal()?,
             )))),
@@ -360,9 +487,7 @@ where
             _ => None,
         };
 
-        if left_expression.is_none()
-            && !self.is_expression_terminated(self.current_token.kind.clone())
-        {
+        if left_expression.is_none() && !self.is_terminated(self.current_token.kind.clone()) {
             return Err(ParsingError::unexpected_token(
                 self.current_token.kind.to_string(),
                 self.span,
@@ -373,9 +498,7 @@ where
             ParsingError::unexpected_token(self.current_token.kind.to_string(), self.span)
         })?;
 
-        while !self.is_expression_terminated(self.peek_token.kind.clone())
-            && priority < self.peek_priority()
-        {
+        while !self.is_terminated(self.peek_token.kind.clone()) && priority < self.peek_priority() {
             self.next_token();
 
             left_expression = match self.current_token.kind {
@@ -391,7 +514,7 @@ where
                 | TokenKind::GT
                 | TokenKind::LTE
                 | TokenKind::GTE => {
-                    let operator: BinaryOperator = self.current_token.kind.clone().into();
+                    let operator = self.current_token.kind.clone().into();
 
                     let priority = self.current_priority();
                     self.next_token();
@@ -536,10 +659,6 @@ where
         }
 
         left_expression
-    }
-
-    fn parse_block_expression(&mut self) -> ParseResult<BlockExpression> {
-        todo!()
     }
 
     fn parse_array_literal(&mut self) -> ParseResult<ArrayLiteral> {
