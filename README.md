@@ -48,6 +48,10 @@ Hello, World!
 
 # Syntax
 
+> [!WARNING]
+> 
+> Rewriting a new parser. the code below doesn't work.
+
 ```rust
 extern fn print_str(string) -> string;
 extern fn concat_str(string, string) -> string;
