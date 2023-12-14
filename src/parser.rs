@@ -5,7 +5,7 @@ use crate::{
         types::{AstArrayTypeKind, AstType, AstTypeKind},
         ArrayLiteral, AssignExpression, BinaryExpression, Block, BooleanLiteral, CallExpression,
         CastExpression, Declaration, DereferenceExpression, Expression,
-        ExternalFunctionDeclaration, FloatLiteral, FunctionDefinition, Identifier, IfExpression,
+        ExternalFunctionDeclaration, FloatLiteral, FunctionDefinition, Identifier, IfStatement,
         IndexExpression, IntLiteral, LetStatement, Literal, Parameter, PointerExpression,
         ReturnStatement, SizeofExpression, Statement, StringLiteral, StructDeclaration,
         StructLiteral, TypeDeclaration, TypeofExpression, UnaryExpression, While,
@@ -14,7 +14,7 @@ use crate::{
         tokens::{Token, TokenKind},
         Lexer, LexingError, LexingErrorKind,
     },
-    BinaryOperator, Position, Priority, Program, Span, UnaryOperator,
+    BinaryOperator, DisplayNode, Position, Priority, Program, Span, UnaryOperator,
 };
 use std::{collections::BTreeMap, fmt};
 
@@ -79,7 +79,10 @@ pub type ParseResult<T> = Result<T, ParsingError>;
 macro_rules! identifier {
     ($self:ident) => {
         match $self.current_token.kind {
-            $crate::lexer::tokens::TokenKind::Identifier(ref ident) => ident.to_string(),
+            $crate::lexer::tokens::TokenKind::Identifier(ref ident) => Identifier {
+                identifier: ident.to_string(),
+                span: $self.span,
+            },
             _ => {
                 return Err(ParsingError::expected_next_token(
                     "Identifier".to_string(),
@@ -137,7 +140,10 @@ where
         self.current_token = self.peek_token.clone();
         self.span = self.current_token.span;
 
-        self.peek_token = self.tokens.next().unwrap_or_default();
+        self.peek_token = self.tokens.next().unwrap_or(Token {
+            kind: TokenKind::EOF,
+            span: self.span,
+        });
     }
 
     fn expect_token(&mut self, expected: TokenKind) -> ParseResult<()> {
@@ -186,11 +192,12 @@ where
     fn parse_statement(&mut self) -> ParseResult<Statement> {
         Ok(match self.current_token.kind {
             TokenKind::Let => Statement::Let(self.parse_let_statement()?),
-            TokenKind::Function => Statement::Function(self.parse_function_definition()?),
+            TokenKind::Define => Statement::Function(self.parse_function_definition()?),
             TokenKind::Extern => {
                 Statement::ExternalFunction(self.parse_external_function_declaration()?)
             }
             TokenKind::Return => Statement::Return(self.parse_return_statement()?),
+            TokenKind::If => Statement::If(self.parse_if_statement()?),
             TokenKind::Type => Statement::Type(self.parse_type_statement()?),
             TokenKind::Declare => Statement::Declaration(self.parse_declare_statement()?),
             TokenKind::Struct => Statement::Struct(self.parse_struct_declaration()?),
@@ -223,10 +230,7 @@ where
         }
 
         Ok(LetStatement {
-            name: Identifier {
-                identifier: identifier.to_string(),
-                span: self.span,
-            },
+            name: identifier,
             ty,
             value,
             span: self.span,
@@ -234,71 +238,63 @@ where
     }
 
     fn parse_function_definition(&mut self) -> ParseResult<FunctionDefinition> {
-        /*
-        fn x(a int, b int): int =
-            return a + b
-        */
+        let position = self.span.start;
         self.next_token();
 
-        let name = identifier! { self };
+        let identifier = identifier! { self };
         self.next_token();
-
-        self.expect_token(TokenKind::LParen)?;
 
         let mut parameters = Vec::new();
 
-        if self.current_token.kind != TokenKind::RParen {
-            let identifier = identifier! { self };
+        if self.current_token.kind == TokenKind::LParen {
             self.next_token();
 
-            let ty = self.parse_ty()?;
-            self.next_token();
-
-            parameters.push(Parameter {
-                name: Identifier {
-                    identifier: identifier.to_string(),
-                    span: self.span,
-                },
-                ty,
-            });
-
-            if self.current_token.kind == TokenKind::Comma {
-                self.next_token();
-            }
-
-            while self.current_token.kind != TokenKind::RParen {
+            if self.current_token.kind != TokenKind::RParen {
                 let identifier = identifier! { self };
                 self.next_token();
 
                 let ty = self.parse_ty()?;
 
                 parameters.push(Parameter {
-                    name: Identifier {
-                        identifier: identifier.to_string(),
-                        span: self.span,
-                    },
+                    name: identifier,
                     ty,
                 });
 
-                if self.current_token.kind == TokenKind::RParen {
-                    break;
+                if self.current_token.kind == TokenKind::Comma {
+                    self.next_token();
                 }
 
-                self.expect_token(TokenKind::Comma)?;
+                while self.current_token.kind != TokenKind::RParen {
+                    let identifier = identifier! { self };
+                    self.next_token();
+
+                    let ty = self.parse_ty()?;
+
+                    parameters.push(Parameter {
+                        name: identifier,
+                        ty,
+                    });
+
+                    if self.current_token.kind == TokenKind::RParen {
+                        break;
+                    }
+
+                    self.expect_token(TokenKind::Comma)?;
+                }
+
+                if self.current_token.kind != TokenKind::RParen {
+                    return Err(ParsingError::expected_next_token(
+                        TokenKind::RParen.to_string(),
+                        self.current_token.kind.to_string(),
+                        self.span,
+                    ));
+                }
             }
 
-            if self.current_token.kind != TokenKind::RParen {
-                return Err(ParsingError::expected_next_token(
-                    TokenKind::RParen.to_string(),
-                    self.current_token.kind.to_string(),
-                    self.span,
-                ));
-            }
+            self.next_token();
         }
 
-        self.next_token();
-
-        self.expect_token(TokenKind::Colon)?;
+        self.expect_token(TokenKind::Arrow)?;
 
         let return_type = self.parse_ty()?;
 
@@ -308,14 +304,11 @@ where
         self.next_token();
 
         Ok(FunctionDefinition {
-            name: Identifier {
-                identifier: name.to_string(),
-                span: self.span,
-            },
+            name: identifier,
             parameters,
             return_type,
             body,
-            span: self.span,
+            span: Span::new(position, self.span.end),
         })
     }
 
@@ -336,11 +329,14 @@ where
             statements.push(self.parse_statement()?);
         }
 
-        assert!(
-            self.current_token.kind == TokenKind::Dedent
-                || self.current_token.kind == TokenKind::EOF
-        );
-        // next token is always Newline or EOF
+        if self.current_token.kind != TokenKind::Dedent && self.current_token.kind != TokenKind::EOF
+        {
+            return Err(ParsingError::expected_next_token(
+                TokenKind::Dedent.to_string(),
+                self.current_token.kind.to_string(),
+                self.span,
+            ));
+        }
 
         Ok(Block {
             statements,
@@ -349,7 +345,59 @@ where
     }
 
     fn parse_external_function_declaration(&mut self) -> ParseResult<ExternalFunctionDeclaration> {
-        todo!()
+        self.next_token();
+
+        let identifier = identifier! { self };
+        self.next_token();
+
+        let mut parameters = Vec::new();
+
+        if self.current_token.kind == TokenKind::LParen {
+            self.next_token();
+
+            if self.current_token.kind != TokenKind::RParen {
+                let ty = self.parse_ty()?;
+                parameters.push(ty);
+
+                if self.current_token.kind == TokenKind::Comma {
+                    self.next_token();
+                }
+
+                while self.current_token.kind != TokenKind::RParen {
+                    let ty = self.parse_ty()?;
+                    parameters.push(ty);
+
+                    if self.current_token.kind == TokenKind::RParen {
+                        break;
+                    }
+
+                    self.expect_token(TokenKind::Comma)?;
+                }
+
+                if self.current_token.kind != TokenKind::RParen {
+                    return Err(ParsingError::expected_next_token(
+                        TokenKind::RParen.to_string(),
+                        self.current_token.kind.to_string(),
+                        self.span,
+                    ));
+                }
+            }
+
+            self.next_token();
+        }
+
+        self.expect_token(TokenKind::Arrow)?;
+
+        let return_type = self.parse_ty()?;
+
+        self.expect_termination()?;
+
+        Ok(ExternalFunctionDeclaration {
+            name: identifier,
+            parameters,
+            return_type,
+            span: self.span,
+        })
     }
 
     fn parse_return_statement(&mut self) -> ParseResult<ReturnStatement> {
@@ -362,6 +410,38 @@ where
 
         Ok(ReturnStatement {
             value: expression,
+            span: self.span,
+        })
+    }
+
+    fn parse_if_statement(&mut self) -> ParseResult<IfStatement> {
+        self.next_token();
+
+        let condition = self.parse_expression(Priority::Lowest)?;
+        self.next_token();
+
+        let consequence = self.parse_block()?;
+        self.next_token();
+
+        let alternative = if self.current_token.kind == TokenKind::If {
+            Some(Block {
+                statements: vec![Statement::If(self.parse_if_statement()?)],
+                span: self.span,
+            })
+        } else if self.current_token.kind == TokenKind::Else {
+            self.next_token();
+
+            Some(self.parse_block()?)
+        } else {
+            None
+        };
+
+        self.next_token();
+
+        Ok(IfStatement {
+            condition: Box::new(condition),
+            consequence,
+            alternative,
             span: self.span,
         })
     }
@@ -451,7 +531,6 @@ where
             TokenKind::LBracket => Some(Ok(Expression::Literal(Literal::Array(
                 self.parse_array_literal()?,
             )))),
-            TokenKind::If => Some(Ok(Expression::If(self.parse_if_expression()?))),
             TokenKind::Typeof => {
                 self.next_token();
 
@@ -618,7 +697,10 @@ where
 
                         self.expect_token(TokenKind::Colon)?;
 
-                        fields.insert(key.clone(), self.parse_expression(Priority::Lowest)?);
+                        fields.insert(
+                            key.identifier.clone(),
+                            self.parse_expression(Priority::Lowest)?,
+                        );
                         self.next_token();
 
                         if self.current_token.kind == TokenKind::RBrace {
@@ -665,10 +747,6 @@ where
         todo!()
     }
 
-    fn parse_if_expression(&mut self) -> ParseResult<IfExpression> {
-        todo!()
-    }
-
     fn parse_ty(&mut self) -> ParseResult<AstType> {
         let mut ty = match &self.current_token.kind {
             TokenKind::IntType => Ok(AstTypeKind::Int),
@@ -676,14 +754,11 @@ where
             TokenKind::StringType => Ok(AstTypeKind::String),
             TokenKind::BooleanType => Ok(AstTypeKind::Boolean),
             TokenKind::VoidType => Ok(AstTypeKind::Void),
-            TokenKind::Function => todo!(),
+            TokenKind::Define => todo!(),
             TokenKind::At => {
                 self.next_token();
 
-                Ok(AstTypeKind::TypeAlias(Identifier {
-                    identifier: identifier! { self },
-                    span: self.span,
-                }))
+                Ok(AstTypeKind::TypeAlias(identifier! { self }))
             }
             TokenKind::Identifier(identifier) => Ok(AstTypeKind::Struct(Identifier {
                 identifier: identifier.to_string(),
