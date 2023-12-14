@@ -184,31 +184,10 @@ impl Lexer {
 
         let value = &self.input[position..self.position];
 
-        let keywords = match value {
-            "let" => TokenKind::Let,
-            "fn" => TokenKind::Function,
-            "if" => TokenKind::If,
-            "else" => TokenKind::Else,
-            "return" => TokenKind::Return,
-            "type" => TokenKind::Type,
-            "declare" => TokenKind::Declare,
-            "struct" => TokenKind::Struct,
-            "while" => TokenKind::While,
-            "as" => TokenKind::As,
-            "true" => TokenKind::Boolean(true),
-            "false" => TokenKind::Boolean(false),
-            "int" => TokenKind::IntType,
-            "float" => TokenKind::FloatType,
-            "string" => TokenKind::StringType,
-            "boolean" => TokenKind::BooleanType,
-            "void" => TokenKind::VoidType,
-            "extern" => TokenKind::Extern,
-            "typeof" => TokenKind::Typeof,
-            "sizeof" => TokenKind::Sizeof,
-            identifier => TokenKind::Identifier(identifier.to_string()),
-        };
-        self.tokens
-            .push(Token::new(keywords, self.span_from(start_position)));
+        self.tokens.push(Token::new(
+            TokenKind::from(value),
+            self.span_from(start_position),
+        ));
         Ok(())
     }
 

@@ -16,7 +16,7 @@ pub enum TokenKind {
 
     LT, GT, LTE, GTE, EQ, NEQ,
 
-    Let, Function, If, Else, Return, Type, Declare, Struct, While, As,
+    Let, Define, If, Else, Return, Type, Declare, Struct, While, As,
 
     IntType, FloatType, StringType, BooleanType, VoidType,
 
@@ -27,7 +27,7 @@ impl From<&str> for TokenKind {
     fn from(s: &str) -> Self {
         match s {
             "let" => TokenKind::Let,
-            "fn" => TokenKind::Function,
+            "define" => TokenKind::Define,
             "if" => TokenKind::If,
             "else" => TokenKind::Else,
             "return" => TokenKind::Return,
@@ -40,8 +40,8 @@ impl From<&str> for TokenKind {
             "false" => TokenKind::Boolean(false),
             "int" => TokenKind::IntType,
             "float" => TokenKind::FloatType,
-            "string" => TokenKind::StringType,
-            "boolean" => TokenKind::BooleanType,
+            "str" => TokenKind::StringType,
+            "bool" => TokenKind::BooleanType,
             "void" => TokenKind::VoidType,
             "extern" => TokenKind::Extern,
             "typeof" => TokenKind::Typeof,
