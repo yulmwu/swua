@@ -13,7 +13,6 @@ pub enum Expression {
     Unary(UnaryExpression),
     Assign(AssignExpression),
     Block(Block),
-    If(IfExpression),
     Call(CallExpression),
     Index(IndexExpression),
     Typeof(TypeofExpression),
@@ -34,7 +33,7 @@ impl ExpressionCodegen for Expression {
                 }
             };
         }
-        inner! { Literal Binary Unary Assign Block If Call Index Typeof Sizeof Cast Dereference Pointer }
+        inner! { Literal Binary Unary Assign Block Call Index Typeof Sizeof Cast Dereference Pointer }
     }
 }
 
@@ -51,7 +50,7 @@ impl From<Expression> for Span {
             };
         }
 
-        inner! { Binary Unary Assign Block If Call Index Typeof Sizeof Cast Dereference Pointer }
+        inner! { Binary Unary Assign Block Call Index Typeof Sizeof Cast Dereference Pointer }
     }
 }
 
@@ -67,7 +66,7 @@ impl DisplayNode for Expression {
             };
         }
 
-        inner! { Literal Binary Unary Assign Block If Call Index Typeof Sizeof Cast Dereference Pointer }
+        inner! { Literal Binary Unary Assign Block Call Index Typeof Sizeof Cast Dereference Pointer }
     }
 }
 
@@ -440,98 +439,6 @@ impl DisplayNode for AssignExpression {
         self.expression.display(f, indent)?;
         write!(f, " = ")?;
         self.value.display(f, indent)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct IfExpression {
-    pub condition: Box<Expression>,
-    pub consequence: Block,
-    pub alternative: Option<Block>,
-    pub span: Span,
-}
-
-impl ExpressionCodegen for IfExpression {
-    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
-        let condition = self.condition.codegen(compiler)?;
-        if condition.ty != CodegenType::Boolean {
-            return Err(CompileError::expected("boolean", self.span));
-        }
-
-        let function = compiler
-            .builder
-            .get_insert_block()
-            .unwrap()
-            .get_parent()
-            .unwrap();
-
-        let then_block = compiler.context.append_basic_block(function, "then");
-        let else_block = compiler.context.append_basic_block(function, "else");
-        let merge_block = compiler.context.append_basic_block(function, "merge");
-
-        compiler.builder.build_conditional_branch(
-            condition.llvm_value.into_int_value(),
-            then_block,
-            else_block,
-        );
-
-        compiler.builder.position_at_end(then_block);
-
-        let then = self.consequence.codegen(compiler)?;
-        compiler.builder.build_unconditional_branch(merge_block);
-
-        let then_block = compiler.builder.get_insert_block().unwrap();
-
-        compiler.builder.position_at_end(else_block);
-
-        let else_ = match self.alternative.clone() {
-            Some(expr) => {
-                let else_ = expr.codegen(compiler)?;
-
-                if then.ty != else_.ty {
-                    return Err(CompileError::type_mismatch(then.ty, else_.ty, self.span));
-                }
-
-                else_
-            }
-            None => Value::new(
-                compiler
-                    .context
-                    .i64_type()
-                    .const_int(0, false)
-                    .as_basic_value_enum(),
-                CodegenType::Void,
-            ),
-        };
-        compiler.builder.build_unconditional_branch(merge_block);
-
-        let else_block = compiler.builder.get_insert_block().unwrap();
-
-        compiler.builder.position_at_end(merge_block);
-
-        let phi = compiler
-            .builder
-            .build_phi(then.llvm_value.get_type(), "iftmp");
-        phi.add_incoming(&[
-            (&then.llvm_value, then_block),
-            (&else_.llvm_value, else_block),
-        ]);
-
-        Ok(Value::new(phi.as_basic_value(), then.ty))
-    }
-}
-
-impl DisplayNode for IfExpression {
-    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
-        write!(f, "if ")?;
-        self.condition.display(f, indent)?;
-        write!(f, " ")?;
-        self.consequence.display(f, indent)?;
-        if let Some(alternative) = self.alternative.clone() {
-            write!(f, " else ")?;
-            alternative.display(f, indent)?;
-        }
-        Ok(())
     }
 }
 
