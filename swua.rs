@@ -31,15 +31,7 @@ pub extern "C" fn print_array(x: *const i64, len: i64) -> i64 {
 }
 
 #[no_mangle]
-pub extern "C" fn print_struct(x: *const i64, len: i64) -> i64 {
-    let slice = unsafe { std::slice::from_raw_parts(x, len as usize) };
-    println!("{slice:?}");
-
-    0
-}
-
-#[no_mangle]
-pub extern "C" fn to_string(x: i64) -> *const i8 {
+pub extern "C" fn to_str(x: i64) -> *const i8 {
     let out_str = CString::new(format!("{x}")).unwrap();
     out_str.into_raw()
 }
