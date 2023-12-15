@@ -1,4 +1,4 @@
-use super::{types::AstType, Block, CompileError, CompileResult, Literal};
+use super::{types::AstType, CompileError, CompileResult, Literal};
 use crate::{
     BinaryOperator, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Span, UnaryOperator,
     Value,
@@ -12,7 +12,6 @@ pub enum Expression {
     Binary(BinaryExpression),
     Unary(UnaryExpression),
     Assign(AssignExpression),
-    Block(Block),
     Call(CallExpression),
     Index(IndexExpression),
     Typeof(TypeofExpression),
@@ -33,7 +32,7 @@ impl ExpressionCodegen for Expression {
                 }
             };
         }
-        inner! { Literal Binary Unary Assign Block Call Index Typeof Sizeof Cast Dereference Pointer }
+        inner! { Literal Binary Unary Assign Call Index Typeof Sizeof Cast Dereference Pointer }
     }
 }
 
@@ -50,7 +49,7 @@ impl From<Expression> for Span {
             };
         }
 
-        inner! { Binary Unary Assign Block Call Index Typeof Sizeof Cast Dereference Pointer }
+        inner! { Binary Unary Assign Call Index Typeof Sizeof Cast Dereference Pointer }
     }
 }
 
@@ -66,7 +65,7 @@ impl DisplayNode for Expression {
             };
         }
 
-        inner! { Literal Binary Unary Assign Block Call Index Typeof Sizeof Cast Dereference Pointer }
+        inner! { Literal Binary Unary Assign Call Index Typeof Sizeof Cast Dereference Pointer }
     }
 }
 

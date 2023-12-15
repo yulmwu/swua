@@ -3,9 +3,9 @@ use super::{
 };
 use crate::{
     display, CodegenType, Compiler, DisplayNode, ExpressionCodegen, FunctionType, Span,
-    StatementCodegen, StructType, Value,
+    StatementCodegen, StructType,
 };
-use inkwell::{types::BasicType, values::BasicValue, IntPredicate};
+use inkwell::{types::BasicType, IntPredicate};
 use std::{collections::BTreeMap, fmt};
 
 #[derive(Debug, Clone)]
@@ -164,6 +164,8 @@ impl StatementCodegen for FunctionDefinition {
                 .module
                 .add_function(self.name.identifier.as_str(), function_type, None);
 
+        compiler.current_function = Some((function, return_type.clone()));
+
         let basic_block = compiler.context.append_basic_block(function, "entry");
 
         compiler.builder.position_at_end(basic_block);
@@ -205,29 +207,7 @@ impl StatementCodegen for FunctionDefinition {
             )?;
         }
 
-        for statement in self.body.statements.clone() {
-            if let Statement::Return(return_statement) = statement {
-                let value = return_statement.value.codegen(compiler)?;
-
-                if value.ty != return_type {
-                    return Err(CompileError::type_mismatch(
-                        return_type,
-                        value.ty,
-                        return_statement.value.clone().into(),
-                    ));
-                }
-
-                compiler.builder.build_return(Some(&value.llvm_value));
-                compiler.symbol_table = original_symbol_table;
-                return Ok(());
-            }
-
-            statement.codegen(compiler)?;
-        }
-
-        if return_type != CodegenType::Void {
-            return Err(CompileError::function_must_return_a_value(self.span));
-        }
+        self.body.codegen(compiler)?;
 
         compiler.symbol_table = original_symbol_table;
 
@@ -400,6 +380,17 @@ pub struct ReturnStatement {
 impl StatementCodegen for ReturnStatement {
     fn codegen(&self, compiler: &mut Compiler) -> CompileResult<()> {
         let value = self.value.codegen(compiler)?;
+
+        let (_, return_type) = compiler.current_function.clone().unwrap();
+
+        if value.ty != return_type {
+            return Err(CompileError::type_mismatch(
+                return_type,
+                value.ty,
+                self.value.clone().into(),
+            ));
+        }
+
         compiler.builder.build_return(Some(&value.llvm_value));
 
         Ok(())
@@ -430,12 +421,7 @@ impl StatementCodegen for IfStatement {
             return Err(CompileError::expected("boolean", self.span));
         }
 
-        let function = compiler
-            .builder
-            .get_insert_block()
-            .unwrap()
-            .get_parent()
-            .unwrap();
+        let function = compiler.current_function.clone().unwrap().0;
 
         let then_block = compiler.context.append_basic_block(function, "then");
         let else_block = compiler.context.append_basic_block(function, "else");
@@ -448,46 +434,34 @@ impl StatementCodegen for IfStatement {
         );
 
         compiler.builder.position_at_end(then_block);
+        self.consequence.codegen(compiler)?;
 
-        let then = self.consequence.codegen(compiler)?;
-        compiler.builder.build_unconditional_branch(merge_block);
-
-        let then_block = compiler.builder.get_insert_block().unwrap();
+        if compiler
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_terminator()
+            .is_none()
+        {
+            compiler.builder.build_unconditional_branch(merge_block);
+        }
 
         compiler.builder.position_at_end(else_block);
+        if let Some(alternative) = self.alternative.clone() {
+            alternative.codegen(compiler)?;
+        }
 
-        let else_ = match self.alternative.clone() {
-            Some(expr) => {
-                let else_ = expr.codegen(compiler)?;
-
-                if then.ty != else_.ty {
-                    return Err(CompileError::type_mismatch(then.ty, else_.ty, self.span));
-                }
-
-                else_
-            }
-            None => Value::new(
-                compiler
-                    .context
-                    .i64_type()
-                    .const_int(0, false)
-                    .as_basic_value_enum(),
-                CodegenType::Void,
-            ),
-        };
-        compiler.builder.build_unconditional_branch(merge_block);
-
-        let else_block = compiler.builder.get_insert_block().unwrap();
+        if compiler
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_terminator()
+            .is_none()
+        {
+            compiler.builder.build_unconditional_branch(merge_block);
+        }
 
         compiler.builder.position_at_end(merge_block);
-
-        let phi = compiler
-            .builder
-            .build_phi(then.llvm_value.get_type(), "iftmp");
-        phi.add_incoming(&[
-            (&then.llvm_value, then_block),
-            (&else_.llvm_value, else_block),
-        ]);
 
         Ok(())
     }
@@ -559,12 +533,7 @@ pub struct While {
 
 impl StatementCodegen for While {
     fn codegen(&self, compiler: &mut Compiler) -> CompileResult<()> {
-        let function = compiler
-            .builder
-            .get_insert_block()
-            .unwrap()
-            .get_parent()
-            .unwrap();
+        let function = compiler.current_function.clone().unwrap().0;
 
         let condition_block = compiler.context.append_basic_block(function, "while.cond");
         let body_block = compiler.context.append_basic_block(function, "while.body");
@@ -621,28 +590,18 @@ pub struct Block {
     pub span: Span,
 }
 
-// not a expression
-impl ExpressionCodegen for Block {
-    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+impl StatementCodegen for Block {
+    fn codegen(&self, compiler: &mut Compiler) -> CompileResult<()> {
         let original_symbol_table = compiler.symbol_table.clone();
         compiler.symbol_table = SymbolTable::new_with_parent(compiler.symbol_table.clone());
 
         for statement in self.statements.clone() {
-            if let Statement::Return(return_statement) = statement {
-                let value = return_statement.value.codegen(compiler)?;
-                compiler.symbol_table = original_symbol_table;
-                return Ok(value);
-            }
-
             statement.codegen(compiler)?;
         }
 
         compiler.symbol_table = original_symbol_table;
 
-        Ok(Value::new(
-            compiler.context.i64_type().const_int(0, false).into(),
-            CodegenType::Void,
-        ))
+        Ok(())
     }
 }
 

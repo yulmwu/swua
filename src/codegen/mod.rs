@@ -81,7 +81,6 @@ impl_error_kind! {
     StructNotFound(name: String): struct_not_found<T: ToString>(T) => "struct `{name}` not found",
     FieldNotFound(name: String): field_not_found<T: ToString>(T) => "field `{name}` not found",
     FunctionNotFound(name: String): function_not_found<T: ToString>(T) => "function `{name}` not found",
-    FunctionMustReturnAValue: function_must_return_a_value => "function must return a value",
     UnknownSize: unknown_size => "unknown size",
     WrongNumberOfArguments(expected: String, found: String): wrong_number_of_arguments(usize, usize) => "wrong number of arguments: expected `{expected}`, found `{found}`",
     WrongNumberOfFields(expected: String, found: String): wrong_number_of_fields(usize, usize) => "wrong number of fields: expected `{expected}`, found `{found}`",
