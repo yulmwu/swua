@@ -28,14 +28,10 @@ fn compile<'a>(
     let mut lexer = Lexer::new(source_code);
     lexer.tokenize().map_err(ParsingError::from)?;
 
-    for token in &lexer.tokens {
-        println!("{}", token);
-    }
-
     let program = Parser::new(lexer.tokens.into_iter())
         .parse_program()
         .map_err(CompileError::from)?;
-    println!("{}", program);
+    // println!("{}", program);
 
     program.codegen(context, SymbolTable::default(), triple, name)
 }

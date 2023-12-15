@@ -8,8 +8,11 @@ use codegen::{
     CompileResult, Statement,
 };
 use inkwell::{
-    builder::Builder, context::Context, module::Module, targets::TargetTriple,
-    values::BasicValueEnum,
+    builder::Builder,
+    context::Context,
+    module::Module,
+    targets::TargetTriple,
+    values::{BasicValueEnum, FunctionValue},
 };
 use lexer::tokens::TokenKind;
 use std::fmt;
@@ -20,6 +23,7 @@ pub struct Compiler<'a> {
     pub module: Module<'a>,
     pub builder: Builder<'a>,
     pub symbol_table: SymbolTable<'a>,
+    pub current_function: Option<(FunctionValue<'a>, CodegenType)>,
 }
 
 pub trait StatementCodegen: Clone {
@@ -121,6 +125,7 @@ impl Program {
             module,
             builder,
             symbol_table,
+            current_function: None,
         };
 
         for statement in self.statements.clone() {
