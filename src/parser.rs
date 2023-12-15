@@ -431,12 +431,13 @@ where
         } else if self.current_token.kind == TokenKind::Else {
             self.next_token();
 
-            Some(self.parse_block()?)
+            let block = self.parse_block()?;
+            self.next_token();
+
+            Some(block)
         } else {
             None
         };
-
-        self.next_token();
 
         Ok(IfStatement {
             condition: Box::new(condition),

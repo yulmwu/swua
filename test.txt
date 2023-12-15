@@ -4,13 +4,10 @@ extern to_str(int) -> str
 extern concat_str(str, str) -> str
 
 define fib(n int) -> int =
-    let ret = 0
     if n < 2
-        ret = n // todo: return n
+        return n
     else
-        ret = fib(n - 1) + fib(n - 2)
-    
-    return ret
+        return fib(n - 1) + fib(n - 2)
 
 define main -> int =
     print_str(concat_str("fib(10) = ", to_str(fib(10))))
