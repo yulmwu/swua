@@ -11,4 +11,14 @@ define fib(n int) -> int =
 
 define main -> int =
     print_str(concat_str("fib(10) = ", to_str(fib(10))))
+
+    let a = 1
+
+    if a == 5
+        print_str("a == 5")
+    else if a < 5
+        print_str("a < 5")
+    else
+        print_str("a > 5")
+
     return 0

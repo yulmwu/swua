@@ -300,7 +300,7 @@ where
 
         self.expect_token(TokenKind::Assign)?;
 
-        let body = self.parse_block()?;
+        let body = self.parse_block(true)?;
         self.next_token();
 
         Ok(FunctionDefinition {
@@ -312,9 +312,12 @@ where
         })
     }
 
-    fn parse_block(&mut self) -> ParseResult<Block> {
-        self.next_token();
-        self.expect_token(TokenKind::Indent)?;
+    fn parse_block(&mut self, check_indent: bool) -> ParseResult<Block> {
+        let position = self.span.start;
+        if check_indent {
+            self.next_token();
+            self.expect_token(TokenKind::Indent)?;
+        }
 
         let mut statements = Vec::new();
 
@@ -340,7 +343,7 @@ where
 
         Ok(Block {
             statements,
-            span: self.span,
+            span: Span::new(position, self.span.end),
         })
     }
 
@@ -415,26 +418,47 @@ where
     }
 
     fn parse_if_statement(&mut self) -> ParseResult<IfStatement> {
+        let position = self.span.start;
         self.next_token();
 
         let condition = self.parse_expression(Priority::Lowest)?;
         self.next_token();
 
-        let consequence = self.parse_block()?;
+        let consequence = self.parse_block(true)?;
         self.next_token();
 
-        let alternative = if self.current_token.kind == TokenKind::If {
-            Some(Block {
-                statements: vec![Statement::If(self.parse_if_statement()?)],
-                span: self.span,
-            })
-        } else if self.current_token.kind == TokenKind::Else {
+        // let alternative = if self.current_token.kind == TokenKind::If {
+        //     let position = self.span.start;
+        //     Some(Block {
+        //         statements: vec![Statement::If(self.parse_if_statement()?)],
+        //         span: Span::new(position, self.span.end),
+        //     })
+        // } else if self.current_token.kind == TokenKind::Else {
+        //     self.next_token();
+
+        //     let block = self.parse_block(true)?;
+        //     self.next_token();
+
+        //     Some(block)
+        // } else {
+        //     None
+        // };
+
+        let alternative = if self.current_token.kind == TokenKind::Else {
             self.next_token();
 
-            let block = self.parse_block()?;
-            self.next_token();
+            if self.current_token.kind == TokenKind::If {
+                let position = self.span.start;
+                Some(Block {
+                    statements: vec![Statement::If(self.parse_if_statement()?)],
+                    span: Span::new(position, self.span.end),
+                })
+            } else {
+                let block = self.parse_block(true)?;
+                self.next_token();
 
-            Some(block)
+                Some(block)
+            }
         } else {
             None
         };
@@ -443,7 +467,7 @@ where
             condition: Box::new(condition),
             consequence,
             alternative,
-            span: self.span,
+            span: Span::new(position, self.span.end),
         })
     }
 
