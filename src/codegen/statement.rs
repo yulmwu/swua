@@ -436,6 +436,8 @@ impl StatementCodegen for IfStatement {
         compiler.builder.position_at_end(then_block);
         self.consequence.codegen(compiler)?;
 
+        let mut if_terminated = false;
+
         if compiler
             .builder
             .get_insert_block()
@@ -444,20 +446,29 @@ impl StatementCodegen for IfStatement {
             .is_none()
         {
             compiler.builder.build_unconditional_branch(merge_block);
+        } else {
+            if_terminated = true;
         }
 
         compiler.builder.position_at_end(else_block);
         if let Some(alternative) = self.alternative.clone() {
             alternative.codegen(compiler)?;
+
+            if compiler
+                .builder
+                .get_insert_block()
+                .unwrap()
+                .get_terminator()
+                .is_none()
+                && if_terminated
+            {
+                return Err(CompileError::expected("terminator", alternative.span));
+            }
+        } else if if_terminated {
+            return Err(CompileError::else_clause_is_required(self.span));
         }
 
-        if compiler
-            .builder
-            .get_insert_block()
-            .unwrap()
-            .get_terminator()
-            .is_none()
-        {
+        if !if_terminated {
             compiler.builder.build_unconditional_branch(merge_block);
         }
 
