@@ -146,9 +146,21 @@ where
         });
     }
 
-    fn expect_token(&mut self, expected: TokenKind) -> ParseResult<()> {
+    fn expect_token_consume(&mut self, expected: TokenKind) -> ParseResult<()> {
         if self.current_token.kind == expected {
             self.next_token();
+            Ok(())
+        } else {
+            Err(ParsingError::expected_next_token(
+                expected.to_string(),
+                self.current_token.kind.to_string(),
+                self.current_token.span,
+            ))
+        }
+    }
+
+    fn expect_token(&self, expected: TokenKind) -> ParseResult<()> {
+        if self.current_token.kind == expected {
             Ok(())
         } else {
             Err(ParsingError::expected_next_token(
@@ -215,12 +227,15 @@ where
         let ty = if self.current_token.kind == TokenKind::Colon {
             self.next_token();
 
-            Some(self.parse_ty()?)
+            let ty = self.parse_ty()?;
+            self.next_token();
+
+            Some(ty)
         } else {
             None
         };
 
-        self.expect_token(TokenKind::Assign)?;
+        self.expect_token_consume(TokenKind::Assign)?;
 
         let value = self.parse_expression(Priority::Lowest)?;
         self.next_token();
@@ -254,6 +269,7 @@ where
                 self.next_token();
 
                 let ty = self.parse_ty()?;
+                self.next_token();
 
                 parameters.push(Parameter {
                     name: identifier,
@@ -269,6 +285,7 @@ where
                     self.next_token();
 
                     let ty = self.parse_ty()?;
+                    self.next_token();
 
                     parameters.push(Parameter {
                         name: identifier,
@@ -279,26 +296,21 @@ where
                         break;
                     }
 
-                    self.expect_token(TokenKind::Comma)?;
+                    self.expect_token_consume(TokenKind::Comma)?;
                 }
 
-                if self.current_token.kind != TokenKind::RParen {
-                    return Err(ParsingError::expected_next_token(
-                        TokenKind::RParen.to_string(),
-                        self.current_token.kind.to_string(),
-                        self.span,
-                    ));
-                }
+                self.expect_token(TokenKind::RParen)?;
             }
 
             self.next_token();
         }
 
-        self.expect_token(TokenKind::Arrow)?;
+        self.expect_token_consume(TokenKind::Arrow)?;
 
         let return_type = self.parse_ty()?;
+        self.next_token();
 
-        self.expect_token(TokenKind::Assign)?;
+        self.expect_token_consume(TokenKind::Assign)?;
 
         let body = self.parse_block(true)?;
         self.next_token();
@@ -316,7 +328,7 @@ where
         let position = self.span.start;
         if check_indent {
             self.next_token();
-            self.expect_token(TokenKind::Indent)?;
+            self.expect_token_consume(TokenKind::Indent)?;
         }
 
         let mut statements = Vec::new();
@@ -360,6 +372,7 @@ where
 
             if self.current_token.kind != TokenKind::RParen {
                 let ty = self.parse_ty()?;
+                self.next_token();
                 parameters.push(ty);
 
                 if self.current_token.kind == TokenKind::Comma {
@@ -368,30 +381,26 @@ where
 
                 while self.current_token.kind != TokenKind::RParen {
                     let ty = self.parse_ty()?;
+                    self.next_token();
                     parameters.push(ty);
 
                     if self.current_token.kind == TokenKind::RParen {
                         break;
                     }
 
-                    self.expect_token(TokenKind::Comma)?;
+                    self.expect_token_consume(TokenKind::Comma)?;
                 }
 
-                if self.current_token.kind != TokenKind::RParen {
-                    return Err(ParsingError::expected_next_token(
-                        TokenKind::RParen.to_string(),
-                        self.current_token.kind.to_string(),
-                        self.span,
-                    ));
-                }
+                self.expect_token(TokenKind::RParen)?;
             }
 
             self.next_token();
         }
 
-        self.expect_token(TokenKind::Arrow)?;
+        self.expect_token_consume(TokenKind::Arrow)?;
 
         let return_type = self.parse_ty()?;
+        self.next_token();
 
         self.expect_termination()?;
 
@@ -463,7 +472,68 @@ where
     }
 
     fn parse_struct_declaration(&mut self) -> ParseResult<StructDeclaration> {
-        todo!()
+        /*
+        struct Foo
+            | a: int
+            | b: int
+
+        struct <identifier>
+        <indent> | <identifier>: <type>
+        <indent> | <identifier>: <type>
+        ...
+        <dedent>
+        */
+
+        let position = self.span.start;
+        self.next_token();
+
+        let identifier = identifier! { self };
+        self.next_token();
+
+        self.expect_token_consume(TokenKind::Newline)?;
+
+        let mut fields = BTreeMap::new();
+
+        if self.current_token.kind == TokenKind::Indent {
+            self.next_token();
+
+            while self.current_token.kind != TokenKind::Dedent {
+                self.expect_token_consume(TokenKind::Pipe)?;
+
+                let key = identifier! { self };
+                self.next_token();
+
+                let ty = self.parse_ty()?;
+                self.next_token();
+
+                fields.insert(key.identifier.clone(), ty); // newline pipe .. newline dedent
+
+                if self.current_token.kind == TokenKind::EOF {
+                    break;
+                }
+
+                self.expect_token_consume(TokenKind::Newline)?;
+
+                while self.current_token.kind == TokenKind::Newline {
+                    self.next_token();
+                }
+
+                if self.peek_token.kind == TokenKind::Dedent {
+                    self.next_token();
+                    break;
+                }
+            }
+
+            if self.current_token.kind != TokenKind::EOF {
+                self.expect_token_consume(TokenKind::Dedent)?;
+            }
+        }
+
+        Ok(StructDeclaration {
+            name: identifier,
+            fields,
+            span: Span::new(position, self.span.end),
+        })
     }
 
     fn parse_while_statement(&mut self) -> ParseResult<While> {
@@ -538,13 +608,7 @@ where
                 let expression = self.parse_expression(Priority::Lowest);
                 self.next_token();
 
-                if self.current_token.kind != TokenKind::RParen {
-                    return Err(ParsingError::expected_next_token(
-                        TokenKind::RParen.to_string(),
-                        self.current_token.kind.to_string(),
-                        self.span,
-                    ));
-                }
+                self.expect_token(TokenKind::RParen)?;
 
                 Some(expression)
             }
@@ -658,16 +722,10 @@ where
                                 break;
                             }
 
-                            self.expect_token(TokenKind::Comma)?;
+                            self.expect_token_consume(TokenKind::Comma)?;
                         }
 
-                        if self.current_token.kind != TokenKind::RParen {
-                            return Err(ParsingError::expected_next_token(
-                                TokenKind::RParen.to_string(),
-                                self.current_token.kind.to_string(),
-                                self.span,
-                            ));
-                        }
+                        self.expect_token(TokenKind::RParen)?;
                     }
 
                     Ok(Expression::Call(CallExpression {
@@ -682,13 +740,7 @@ where
                     let index = self.parse_expression(Priority::Lowest)?;
                     self.next_token();
 
-                    if self.current_token.kind != TokenKind::RBracket {
-                        return Err(ParsingError::expected_next_token(
-                            TokenKind::RBracket.to_string(),
-                            self.current_token.kind.to_string(),
-                            self.span,
-                        ));
-                    }
+                    self.expect_token(TokenKind::RBracket)?;
 
                     Ok(Expression::Index(IndexExpression {
                         left: Box::new(left_expression?),
@@ -708,7 +760,7 @@ where
                         }
                     };
 
-                    self.expect_token(TokenKind::LBrace)?;
+                    self.expect_token_consume(TokenKind::LBrace)?;
 
                     let mut fields = BTreeMap::new();
 
@@ -716,7 +768,7 @@ where
                         let key = identifier! { self };
                         self.next_token();
 
-                        self.expect_token(TokenKind::Colon)?;
+                        self.expect_token_consume(TokenKind::Colon)?;
 
                         fields.insert(
                             key.identifier.clone(),
@@ -728,16 +780,10 @@ where
                             break;
                         }
 
-                        self.expect_token(TokenKind::Comma)?;
+                        self.expect_token_consume(TokenKind::Comma)?;
                     }
 
-                    if self.current_token.kind != TokenKind::RBrace {
-                        return Err(ParsingError::expected_next_token(
-                            TokenKind::RBrace.to_string(),
-                            self.current_token.kind.to_string(),
-                            self.span,
-                        ));
-                    }
+                    self.expect_token(TokenKind::RBrace)?;
 
                     Ok(Expression::Literal(Literal::Struct(StructLiteral {
                         name: identifier,
@@ -785,16 +831,10 @@ where
                 break;
             }
 
-            self.expect_token(TokenKind::Comma)?;
+            self.expect_token_consume(TokenKind::Comma)?;
         }
 
-        if self.current_token.kind != TokenKind::RBracket {
-            return Err(ParsingError::expected_next_token(
-                TokenKind::RBracket.to_string(),
-                self.current_token.kind.to_string(),
-                self.span,
-            ));
-        }
+        self.expect_token(TokenKind::RBracket)?;
 
         Ok(ArrayLiteral {
             elements,
@@ -835,13 +875,7 @@ where
                 let expression = self.parse_expression(Priority::Lowest)?;
                 self.next_token();
 
-                if self.current_token.kind != TokenKind::RBracket {
-                    return Err(ParsingError::expected_next_token(
-                        TokenKind::RBracket.to_string(),
-                        self.current_token.kind.to_string(),
-                        self.span,
-                    ));
-                }
+                self.expect_token(TokenKind::RBracket)?;
 
                 match expression {
                     Expression::Literal(Literal::Int(int)) => {
@@ -875,8 +909,6 @@ where
                 span: self.span,
             })));
         }
-
-        self.next_token();
 
         Ok(AstType {
             kind: ty?,
