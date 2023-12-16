@@ -769,7 +769,41 @@ where
     }
 
     fn parse_array_literal(&mut self) -> ParseResult<ArrayLiteral> {
-        todo!()
+        let position = self.span.start;
+        self.next_token();
+
+        let mut elements = Vec::new();
+
+        if self.current_token.kind == TokenKind::RBracket {
+            return Ok(ArrayLiteral {
+                elements,
+                span: Span::new(position, self.span.end),
+            });
+        }
+
+        while self.current_token.kind != TokenKind::RBrace {
+            elements.push(self.parse_expression(Priority::Lowest)?);
+            self.next_token();
+
+            if self.current_token.kind == TokenKind::RBracket {
+                break;
+            }
+
+            self.expect_token(TokenKind::Comma)?;
+        }
+
+        if self.current_token.kind != TokenKind::RBracket {
+            return Err(ParsingError::expected_next_token(
+                TokenKind::RBracket.to_string(),
+                self.current_token.kind.to_string(),
+                self.span,
+            ));
+        }
+
+        Ok(ArrayLiteral {
+            elements,
+            span: Span::new(position, self.span.end),
+        })
     }
 
     fn parse_ty(&mut self) -> ParseResult<AstType> {
