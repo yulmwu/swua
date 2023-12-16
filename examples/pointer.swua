@@ -1,26 +1,23 @@
-extern fn print_str(string) -> int;
-extern fn concat_str(string, string) -> string;
-extern fn to_string(int) -> string;
+extern print_str(str) -> int
+extern concat_str(str, str) -> str
+extern to_str(int) -> str
 
-fn print_pointer(x: int*) -> int {
-    let addr = x as int;
-    print_str(concat_str("address: ", to_string(addr)));
-    print_str(concat_str("value: ", to_string(*(addr as int*))));
-    return 0;
-}
+define print_pointer(x int*) -> int =
+    let addr = x as int
+    print_str(concat_str("address: ", to_str(addr)))
+    print_str(concat_str("value: ", to_str(*(addr as int*))))
+    return 0
 
-fn foo(x: int*, value: int) -> int {
-    *x = value;
-    return *x;
-}
+define foo(x int*, value int) -> int =
+    *x = value
+    return *x
 
-fn main() -> int {
-    let x = 3;
-    let ptr = &x;
-    print_pointer(ptr);
+define main() -> int =
+    let x = 3
+    let ptr = &x
+    print_pointer(ptr)
 
-    foo(ptr, 5);
-    print_pointer(ptr);
+    foo(ptr, 5)
+    print_pointer(ptr)
 
-    return 0;
-}
+    return 0

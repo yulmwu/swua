@@ -1,41 +1,47 @@
-extern fn print(int) -> int;
-extern fn print_str(string) -> int;
-extern fn print_array(int[], int) -> int;
-extern fn to_string(int) -> string;
-extern fn concat_str(string, string) -> string;
+extern print(int) -> int
+extern print_str(str) -> str
+extern print_array(int[], int) -> int
+extern to_str(int) -> str
+extern concat_str(str, str) -> str
 
-struct Foo { x: int, y: int };
-struct Bar { data: Foo[], bar: int[] };
+struct Foo
+    | x int
+    | y int
 
-fn add(a: int, b: int) -> int => a + b;
+struct Bar
+    | data Foo[]
+    | bar int[]
 
-fn main() -> int {
-    let foo1: Foo = Foo { x: 2, y: 3 };
-    let foo2: Foo = Foo { x: 10, y: 20 };
+define add(a int, b int) -> int =
+    return a + b
+
+define main -> int =
+    let foo1: Foo = Foo { x: 2, y: 3 }
+    let foo2: Foo = Foo { x: 10, y: 20 }
 
     let bar: Bar = Bar {
         data: [foo1, foo2],
         bar: [0, 1, 2, 3, 4, 5]
-    };
-    let size = sizeof bar.bar;
-    let int_size = sizeof bar.bar[0];
-    print_array(bar.bar, size / int_size);
+    }
 
-    let a = add(bar.data[0].x, bar.data[bar.bar[1]].x); // 12
-    let b = add(bar.data[bar.bar[0]].y, bar.data[bar.bar[1]].y); // 23
+    let size = sizeof bar.bar
+    let int_size = sizeof bar.bar[0]
+    print_array(bar.bar, size / int_size)
 
-    print_str(concat_str("a = ", to_string(a)));
-    print_str(concat_str("b = ", to_string(b)));
+    let a = add(bar.data[0].x, bar.data[bar.bar[1]].x) // 12
+    let b = add(bar.data[bar.bar[0]].y, bar.data[bar.bar[1]].y) // 23
 
-    let result = if (a == 12) {
-        print_str("a == 12");
-        return add(a, b);
-    } else {
-        print_str(concat_str("a != 12, a = ", to_string(a)));
-        return 0;
-    };
+    print_str(concat_str("a = ", to_str(a)))
+    print_str(concat_str("b = ", to_str(b)))
 
-    print_str(concat_str("result = ", to_string(result)));
+    let result = 0
 
-    return 0;
-}
+    if a == 12
+        print_str("a == 12")
+        result = add(a, b)
+    else
+        print_str(concat_str("a != 12, a = ", to_str(a)))
+
+    print_str(concat_str("result = ", to_str(result)))
+
+    return 0

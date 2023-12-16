@@ -1,15 +1,14 @@
-extern fn print(int) -> int;
+extern print_str(str) -> str
+extern to_str(int) -> str
+extern concat_str(str, str) -> str
 
-fn fib(n: int) -> int {
-    return if (n < 2) {
-        return n;
-    } else {
-        return fib(n - 1) + fib(n - 2);
-    };
-}
+define fib(n int) -> int =
+    if n < 2
+        return n
+    else
+        return fib(n - 1) + fib(n - 2)
 
-fn main() -> int {
-    print(fib(10));
+define main -> int =
+    print_str(concat_str("fib(10) = ", to_str(fib(10))))
 
-    return 0;
-}
+    return 0

@@ -1,7 +1,6 @@
-extern fn print_str(string) -> string;
-extern fn concat_str(string, string) -> string;
+extern print_str(str) -> int
+extern concat_str(str, str) -> str
 
-fn main() -> int {
-    print_str(concat_str("Hello, ", "World!"));
-    return 0;
-}
+define main -> int =
+    print_str(concat_str("Hello, ", "World!"))
+    return 0
