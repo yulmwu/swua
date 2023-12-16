@@ -48,25 +48,24 @@ Hello, World!
 
 # Syntax
 
-> [!WARNING]
-> 
-> Rewriting a new parser. the code below doesn't work.
+```
+extern print_str(str) -> str
+extern to_str(int) -> str
+extern concat_str(str, str) -> str
 
-```rust
-extern fn print_str(string) -> string;
-extern fn concat_str(string, string) -> string;
+define fib(n int) -> int =
+    if n < 2
+        return n
+    else
+        return fib(n - 1) + fib(n - 2)
 
-fn main() -> int {
-    print_str(concat_str("Hello, ", "World!"));
-    return 0;
-}
+define main -> int =
+    print_str(concat_str("fib(10) = ", to_str(fib(10))))
+
+    return 0
 ```
 
 See [examples](./examples) for more details.
-
-> [!NOTE]
->
-> Syntax may change in the future. it is currently based on the syntax of Rust and C-like languages.
 
 # Features and TODOs
 
@@ -74,7 +73,7 @@ See [examples](./examples) for more details.
 
 -   [x] Frontend
     -   [x] Lexer
-    -   [ ] Parser
+    -   [x] Parser
     -   [x] AST
     -   [x] Type Checker (Semantic Analysis)
 -   [x] Backend (WIP)
