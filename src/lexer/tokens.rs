@@ -8,7 +8,7 @@ pub enum TokenKind {
 
     Identifier(String), Int(i64), Float(f64), String(String), Boolean(bool), Comment,
 
-    Assign, Plus, Minus, Bang, Asterisk, Slash, Percent, Arrow, DoubleArrow, Ampersand, At, Sharp,
+    Assign, Plus, Minus, Bang, Asterisk, Slash, Percent, Arrow, DoubleArrow, Ampersand, At, Sharp, Pipe,
 
     Dot, Comma, Colon, DoubleColon, Semicolon,
 

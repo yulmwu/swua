@@ -365,7 +365,7 @@ impl Lexer {
             '!' => self.double(TokenKind::Bang, '=', TokenKind::NEQ),
             '*' => self.single(TokenKind::Asterisk),
             '/' => {
-                if self.current_char == '/' {
+                if self.peek_char() == '/' {
                     self.read_char();
                     while self.current_char != '\n' && self.current_char != '\0' {
                         self.read_char();
@@ -409,6 +409,7 @@ impl Lexer {
             }
             '<' => self.double(TokenKind::LT, '=', TokenKind::LTE),
             '>' => self.double(TokenKind::GT, '=', TokenKind::GTE),
+            '|' => self.single(TokenKind::Pipe),
             '\0' => {
                 self.tokens
                     .push(Token::new(TokenKind::EOF, self.span_from(start_position)));
