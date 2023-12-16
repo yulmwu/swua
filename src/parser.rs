@@ -427,23 +427,6 @@ where
         let consequence = self.parse_block(true)?;
         self.next_token();
 
-        // let alternative = if self.current_token.kind == TokenKind::If {
-        //     let position = self.span.start;
-        //     Some(Block {
-        //         statements: vec![Statement::If(self.parse_if_statement()?)],
-        //         span: Span::new(position, self.span.end),
-        //     })
-        // } else if self.current_token.kind == TokenKind::Else {
-        //     self.next_token();
-
-        //     let block = self.parse_block(true)?;
-        //     self.next_token();
-
-        //     Some(block)
-        // } else {
-        //     None
-        // };
-
         let alternative = if self.current_token.kind == TokenKind::Else {
             self.next_token();
 
@@ -484,7 +467,20 @@ where
     }
 
     fn parse_while_statement(&mut self) -> ParseResult<While> {
-        todo!()
+        let position = self.span.start;
+        self.next_token();
+
+        let condition = self.parse_expression(Priority::Lowest)?;
+        self.next_token();
+
+        let body = self.parse_block(true)?;
+        self.next_token();
+
+        Ok(While {
+            condition,
+            body,
+            span: Span::new(position, self.span.end),
+        })
     }
 
     fn parse_expression_statement(&mut self) -> ParseResult<Statement> {

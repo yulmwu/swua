@@ -1,3 +1,4 @@
+extern print(int) -> int
 extern print_str(str) -> str
 extern to_str(int) -> str
 extern concat_str(str, str) -> str
@@ -10,4 +11,10 @@ define fib(n int) -> int =
 
 define main -> int =
     print_str(concat_str("fib(10) = ", to_str(fib(10))))
+
+    let i = 0
+    while i <= 10
+        print(fib(i))
+        i = i + 1
+
     return 0
