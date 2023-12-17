@@ -185,7 +185,7 @@ impl CodegenType {
                 .to_llvm_type(context)
                 .ptr_type(AddressSpace::from(0))
                 .into(),
-            _ => unimplemented!(),
+            CodegenType::Void => context.i8_type().ptr_type(AddressSpace::from(0)).into(),
         }
     }
 

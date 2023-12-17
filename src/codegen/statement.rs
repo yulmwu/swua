@@ -216,6 +216,10 @@ impl StatementCodegen for FunctionDefinition {
             return Err(CompileError::expected("return", self.span));
         }
 
+        if return_type == CodegenType::Void {
+            compiler.builder.build_return(None);
+        }
+
         compiler.symbol_table = original_symbol_table;
 
         Ok(())
