@@ -23,7 +23,14 @@ pub struct Compiler<'a> {
     pub module: Module<'a>,
     pub builder: Builder<'a>,
     pub symbol_table: SymbolTable<'a>,
-    pub current_function: Option<(FunctionValue<'a>, CodegenType)>,
+    pub current_function: Option<CurrentFunction<'a>>,
+    pub current_return: Option<Value<'a>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CurrentFunction<'a> {
+    pub function: FunctionValue<'a>,
+    pub return_type: CodegenType,
 }
 
 pub trait StatementCodegen: Clone {
@@ -126,6 +133,7 @@ impl Program {
             builder,
             symbol_table,
             current_function: None,
+            current_return: None,
         };
 
         for statement in self.statements.clone() {
