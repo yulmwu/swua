@@ -464,7 +464,24 @@ where
     }
 
     fn parse_type_statement(&mut self) -> ParseResult<TypeDeclaration> {
-        todo!()
+        let position = self.span.start;
+        self.next_token();
+
+        let identifier = identifier! { self };
+        self.next_token();
+
+        self.expect_token_consume(TokenKind::Assign)?;
+
+        let ty = self.parse_ty()?;
+        self.next_token();
+
+        self.expect_termination()?;
+
+        Ok(TypeDeclaration {
+            name: identifier,
+            ty,
+            span: Span::new(position, self.span.end),
+        })
     }
 
     fn parse_declare_statement(&mut self) -> ParseResult<Declaration> {
