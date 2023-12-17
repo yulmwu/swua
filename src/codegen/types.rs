@@ -49,7 +49,18 @@ impl AstTypeKind {
                 len: array_type.len,
                 span: array_type.span,
             }),
-            AstTypeKind::TypeAlias(_) => todo!(),
+            AstTypeKind::TypeAlias(name) => {
+                let ty = match symbol_table.get_type_alias(&name.identifier) {
+                    Some(ty) => ty,
+                    None => {
+                        return Err(CompileError::type_not_found(
+                            name.identifier.clone(),
+                            name.span,
+                        ))
+                    }
+                };
+                ty.clone()
+            }
             AstTypeKind::Struct(name) => {
                 let struct_type = match symbol_table.get_struct(&name.identifier) {
                     Some(struct_type) => struct_type,

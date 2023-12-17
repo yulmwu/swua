@@ -13,6 +13,7 @@ pub struct SymbolEntries<'a> {
     pub symbols: BTreeMap<String, (PointerValue<'a>, CodegenType)>,
     pub functions: BTreeMap<String, (types::FunctionType<'a>, FunctionType)>,
     pub structs: BTreeMap<String, (types::StructType<'a>, StructType)>,
+    pub type_aliases: BTreeMap<String, CodegenType>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -82,6 +83,20 @@ impl<'a> SymbolTable<'a> {
         Ok(())
     }
 
+    pub fn insert_type_alias(
+        &mut self,
+        name: String,
+        ty: CodegenType,
+        span: Span,
+    ) -> CompileResult<()> {
+        if self.entries.type_aliases.contains_key(&name) {
+            return Err(CompileError::type_already_declared(name, span));
+        }
+
+        self.entries.type_aliases.insert(name, ty);
+        Ok(())
+    }
+
     pub fn get_variable(&self, name: &str) -> Option<(PointerValue<'a>, CodegenType)> {
         match self.entries.symbols.get(name) {
             Some(entry) => Some(entry.clone()),
@@ -107,6 +122,16 @@ impl<'a> SymbolTable<'a> {
             Some(entry) => Some(entry.clone()),
             None => match self.parent {
                 Some(ref parent) => parent.get_struct(name),
+                None => None,
+            },
+        }
+    }
+
+    pub fn get_type_alias(&self, name: &str) -> Option<CodegenType> {
+        match self.entries.type_aliases.get(name) {
+            Some(entry) => Some(entry.clone()),
+            None => match self.parent {
+                Some(ref parent) => parent.get_type_alias(name),
                 None => None,
             },
         }

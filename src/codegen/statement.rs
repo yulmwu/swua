@@ -2,8 +2,8 @@ use super::{
     symbol_table::SymbolTable, types::AstType, CompileError, CompileResult, Expression, Identifier,
 };
 use crate::{
-    display, CodegenType, Compiler, DisplayNode, ExpressionCodegen, FunctionType, Span,
-    StatementCodegen, StructType,
+    display, CodegenType, Compiler, CurrentFunction, DisplayNode, ExpressionCodegen, FunctionType,
+    Span, StatementCodegen, StructType,
 };
 use inkwell::{types::BasicType, IntPredicate};
 use std::{collections::BTreeMap, fmt};
@@ -164,7 +164,10 @@ impl StatementCodegen for FunctionDefinition {
                 .module
                 .add_function(self.name.identifier.as_str(), function_type, None);
 
-        compiler.current_function = Some((function, return_type.clone()));
+        compiler.current_function = Some(CurrentFunction {
+            function,
+            return_type: return_type.clone(),
+        });
 
         let basic_block = compiler.context.append_basic_block(function, "entry");
 
@@ -208,6 +211,10 @@ impl StatementCodegen for FunctionDefinition {
         }
 
         self.body.codegen(compiler)?;
+
+        if return_type != CodegenType::Void && compiler.current_return.is_none() {
+            return Err(CompileError::expected("return", self.span));
+        }
 
         compiler.symbol_table = original_symbol_table;
 
@@ -381,7 +388,7 @@ impl StatementCodegen for ReturnStatement {
     fn codegen(&self, compiler: &mut Compiler) -> CompileResult<()> {
         let value = self.value.codegen(compiler)?;
 
-        let (_, return_type) = compiler.current_function.clone().unwrap();
+        let CurrentFunction { return_type, .. } = compiler.current_function.clone().unwrap();
 
         if value.ty != return_type {
             return Err(CompileError::type_mismatch(
@@ -392,6 +399,7 @@ impl StatementCodegen for ReturnStatement {
         }
 
         compiler.builder.build_return(Some(&value.llvm_value));
+        compiler.current_return = Some(value);
 
         Ok(())
     }
@@ -421,7 +429,7 @@ impl StatementCodegen for IfStatement {
             return Err(CompileError::expected("boolean", self.span));
         }
 
-        let function = compiler.current_function.clone().unwrap().0;
+        let function = compiler.current_function.clone().unwrap().function;
 
         let then_block = compiler.context.append_basic_block(function, "then");
         let else_block = compiler.context.append_basic_block(function, "else");
@@ -501,8 +509,16 @@ pub struct TypeDeclaration {
 }
 
 impl StatementCodegen for TypeDeclaration {
-    fn codegen(&self, _: &mut Compiler) -> CompileResult<()> {
-        todo!()
+    fn codegen(&self, compiler: &mut Compiler) -> CompileResult<()> {
+        let ty = self.ty.kind.to_codegen_type(&compiler.symbol_table)?;
+
+        compiler.symbol_table.insert_type_alias(
+            self.name.identifier.clone(),
+            ty.clone(),
+            self.span,
+        )?;
+
+        Ok(())
     }
 }
 
@@ -544,7 +560,7 @@ pub struct While {
 
 impl StatementCodegen for While {
     fn codegen(&self, compiler: &mut Compiler) -> CompileResult<()> {
-        let function = compiler.current_function.clone().unwrap().0;
+        let function = compiler.current_function.clone().unwrap().function;
 
         let condition_block = compiler.context.append_basic_block(function, "while.cond");
         let body_block = compiler.context.append_basic_block(function, "while.body");
