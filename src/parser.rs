@@ -76,6 +76,7 @@ impl_error_kind! {
 
 pub type ParseResult<T> = Result<T, ParsingError>;
 
+#[macro_export]
 macro_rules! identifier {
     ($self:ident) => {
         match $self.current_token.kind {
@@ -169,6 +170,10 @@ where
                 self.current_token.span,
             ))
         }
+    }
+
+    fn is_eof(&self) -> bool {
+        self.current_token.kind == TokenKind::EOF
     }
 
     fn is_terminated(&self, kind: TokenKind) -> bool {
@@ -280,7 +285,7 @@ where
                     self.next_token();
                 }
 
-                while self.current_token.kind != TokenKind::RParen {
+                while self.current_token.kind != TokenKind::RParen && !self.is_eof() {
                     let identifier = identifier! { self };
                     self.next_token();
 
@@ -333,9 +338,7 @@ where
 
         let mut statements = Vec::new();
 
-        while self.current_token.kind != TokenKind::Dedent
-            && self.current_token.kind != TokenKind::EOF
-        {
+        while self.current_token.kind != TokenKind::Dedent && !self.is_eof() {
             if self.current_token.kind == TokenKind::Newline {
                 self.next_token();
                 continue;
@@ -379,7 +382,7 @@ where
                     self.next_token();
                 }
 
-                while self.current_token.kind != TokenKind::RParen {
+                while self.current_token.kind != TokenKind::RParen && !self.is_eof() {
                     let ty = self.parse_ty()?;
                     self.next_token();
                     parameters.push(ty);
@@ -514,7 +517,7 @@ where
         if self.current_token.kind == TokenKind::Indent {
             self.next_token();
 
-            while self.current_token.kind != TokenKind::Dedent {
+            while self.current_token.kind != TokenKind::Dedent && !self.is_eof() {
                 self.expect_token_consume(TokenKind::Pipe)?;
 
                 let key = identifier! { self };
@@ -524,10 +527,6 @@ where
                 self.next_token();
 
                 fields.insert(key.identifier.clone(), ty); // newline pipe .. newline dedent
-
-                if self.current_token.kind == TokenKind::EOF {
-                    break;
-                }
 
                 self.expect_token_consume(TokenKind::Newline)?;
 
@@ -731,7 +730,7 @@ where
                             self.next_token();
                         }
 
-                        while self.current_token.kind != TokenKind::RParen {
+                        while self.current_token.kind != TokenKind::RParen && !self.is_eof() {
                             arguments.push(self.parse_expression(Priority::Lowest)?);
                             self.next_token();
 
@@ -781,7 +780,7 @@ where
 
                     let mut fields = BTreeMap::new();
 
-                    while self.current_token.kind != TokenKind::RBrace {
+                    while self.current_token.kind != TokenKind::RBrace && !self.is_eof() {
                         let key = identifier! { self };
                         self.next_token();
 
