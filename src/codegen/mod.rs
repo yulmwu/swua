@@ -10,6 +10,7 @@ pub mod symbol_table;
 pub mod types;
 
 use crate::{
+    lexer::LexingError,
     parser::{ParsingError, ParsingErrorKind},
     Span,
 };
@@ -63,6 +64,12 @@ macro_rules! impl_error_kind {
         impl From<ParsingError> for CompileError {
             fn from(error: ParsingError) -> Self {
                 Self::new(CompileErrorKind::ParsingError(error.kind), error.span)
+            }
+        }
+
+        impl From<LexingError> for CompileError {
+            fn from(error: LexingError) -> Self {
+                ParsingError::from(error).into()
             }
         }
     };
