@@ -21,6 +21,8 @@ pub enum TokenKind {
     IntType, FloatType, StringType, BooleanType, VoidType,
 
     Extern, Typeof, Sizeof,
+
+    Defln, End,
 }
 
 impl From<&str> for TokenKind {
@@ -46,6 +48,8 @@ impl From<&str> for TokenKind {
             "extern" => TokenKind::Extern,
             "typeof" => TokenKind::Typeof,
             "sizeof" => TokenKind::Sizeof,
+            "defln" => TokenKind::Defln,
+            "end" => TokenKind::End,
             s => TokenKind::Identifier(s.to_string()),
         }
     }
