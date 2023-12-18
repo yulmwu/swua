@@ -1,0 +1,14 @@
+#define X @T
+
+#defln Foo
+let x = 42
+print(x)
+return x
+#end
+
+extern print(int) -> int
+
+type T = int
+
+define main -> X =
+    Foo
