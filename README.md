@@ -76,6 +76,7 @@ See [examples](./examples) for more details.
     -   [x] Parser
     -   [x] AST
     -   [x] Type Checker (Semantic Analysis)
+    -   [ ] Macro
 -   [x] Backend (WIP)
     -   [ ] Optimizer
     -   [x] LLVM IR Generator
