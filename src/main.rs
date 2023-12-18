@@ -14,9 +14,10 @@ use std::{
     time::Instant,
 };
 use swua::{
-    codegen::{symbol_table::SymbolTable, CompileError, CompileResult},
+    codegen::{symbol_table::SymbolTable, CompileError},
     lexer::Lexer,
-    parser::{Parser, ParsingError},
+    parser::Parser,
+    preprocessor::Preprocessor,
 };
 
 fn compile<'a>(
@@ -24,11 +25,14 @@ fn compile<'a>(
     source_code: String,
     triple: &TargetTriple,
     name: &str,
-) -> CompileResult<Module<'a>> {
+) -> Result<Module<'a>, CompileError> {
     let mut lexer = Lexer::new(source_code);
-    lexer.tokenize().map_err(ParsingError::from)?;
+    lexer.tokenize().map_err(CompileError::from)?;
 
-    let program = Parser::new(lexer.tokens.into_iter())
+    let mut preprocessor = Preprocessor::new(lexer.tokens.into_iter());
+    let tokens = preprocessor.preprocess().map_err(CompileError::from)?;
+
+    let program = Parser::new(tokens.into_iter())
         .parse_program()
         .map_err(CompileError::from)?;
     // println!("{}", program);
@@ -36,23 +40,27 @@ fn compile<'a>(
     program.codegen(context, SymbolTable::default(), triple, name)
 }
 
-fn compile_error(err: CompileError, name: &str, filename: &str, file_content: String) {
+fn compile_error(error: CompileError, name: &str, filename: &str, file_content: String) {
     println!("{}:", "Compilation failed due to".red().bold());
 
     let lines: Vec<&str> = file_content.split('\n').collect();
-    let line = lines[err.span.start.line - 1];
+    let line = lines[error.span.start.line - 1];
+    let spacing = error.span.start.line.to_string().len();
 
-    let spacing = err.span.start.line.to_string().len();
     println!("{}", format!(" {} |", " ".repeat(spacing)).blue());
-    println!("{}{line}", format!(" {} |", err.span.start.line).blue());
+    println!("{}{line}", format!(" {} |", error.span.start.line).blue());
     println!(
         "{}{}{}",
         format!(" {} |", " ".repeat(spacing)).blue(),
-        " ".repeat(err.span.start.column - 1),
-        format!("^ Error: {}", err.kind).red().underline()
+        " ".repeat(error.span.start.column - 1),
+        format!("^ Error: {}", error.kind).red().underline()
     );
 
-    println!(" {} {filename}:{} ({name})", "--->".blue(), err.span.start);
+    println!(
+        " {} {filename}:{} ({name})",
+        "--->".blue(),
+        error.span.start
+    );
 }
 
 #[derive(ClapParser, Debug)]
