@@ -306,15 +306,17 @@ impl ExpressionCodegen for AssignExpression {
             Expression::Literal(Literal::Identifier(identifier)) => {
                 match compiler.symbol_table.get_variable(&identifier.identifier) {
                     Some(entry) => {
-                        if entry.1 != value.ty {
+                        if entry.ty != value.ty {
                             return Err(CompileError::type_mismatch(
-                                entry.1.clone(),
+                                entry.ty.clone(),
                                 value.ty,
                                 identifier.span,
                             ));
                         }
 
-                        compiler.builder.build_store(entry.0, value.llvm_value);
+                        compiler
+                            .builder
+                            .build_store(entry.pointer, value.llvm_value);
                         value
                     }
                     None => {
@@ -476,9 +478,9 @@ impl ExpressionCodegen for CallExpression {
             _ => return Err(CompileError::call_non_function_type(self.span)),
         };
 
-        if self.arguments.len() != entry.1.parameters.len() {
+        if self.arguments.len() != entry.function_type.parameters.len() {
             return Err(CompileError::wrong_number_of_arguments(
-                entry.1.parameters.len(),
+                entry.function_type.parameters.len(),
                 self.arguments.len(),
                 self.span,
             ));
@@ -490,7 +492,7 @@ impl ExpressionCodegen for CallExpression {
             let value = argument.codegen(compiler)?;
             arguments.push(value.llvm_value.into());
 
-            let paramter_ty = entry.1.parameters[arguments.len() - 1].clone();
+            let paramter_ty = entry.function_type.parameters[arguments.len() - 1].clone();
             if value.ty != paramter_ty {
                 return Err(CompileError::type_mismatch(
                     paramter_ty,
@@ -507,7 +509,7 @@ impl ExpressionCodegen for CallExpression {
                 .try_as_basic_value()
                 .left()
             {
-                Some(value) => Value::new(value, *entry.1.return_type.clone()),
+                Some(value) => Value::new(value, *entry.function_type.return_type.clone()),
                 None => Value::new(
                     compiler.context.i64_type().const_int(0, false).into(),
                     CodegenType::Int, // Void
@@ -762,8 +764,8 @@ impl ExpressionCodegen for PointerExpression {
                 };
 
                 Ok(Value::new(
-                    value.0.as_basic_value_enum(),
-                    CodegenType::Pointer(Box::new(value.1.clone())),
+                    value.pointer.as_basic_value_enum(),
+                    CodegenType::Pointer(Box::new(value.ty.clone())),
                 ))
             }
             Expression::Index(index) => {

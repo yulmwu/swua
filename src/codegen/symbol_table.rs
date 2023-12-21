@@ -10,10 +10,33 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default)]
 pub struct SymbolEntries<'a> {
-    pub symbols: BTreeMap<String, (PointerValue<'a>, CodegenType)>,
-    pub functions: BTreeMap<String, (types::FunctionType<'a>, FunctionType)>,
-    pub structs: BTreeMap<String, (types::StructType<'a>, StructType)>,
-    pub type_aliases: BTreeMap<String, CodegenType>,
+    pub variables: BTreeMap<String, VariableEntry<'a>>,
+    pub functions: BTreeMap<String, FunctionEntry<'a>>,
+    pub structs: BTreeMap<String, StructEntry<'a>>,
+    pub type_aliases: BTreeMap<String, TypeAliasEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VariableEntry<'a> {
+    pub pointer: PointerValue<'a>,
+    pub ty: CodegenType,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionEntry<'a> {
+    pub ty: types::FunctionType<'a>,
+    pub function_type: FunctionType,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructEntry<'a> {
+    pub ty: types::StructType<'a>,
+    pub struct_type: StructType,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeAliasEntry {
+    pub ty: CodegenType,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -41,11 +64,13 @@ impl<'a> SymbolTable<'a> {
         value: PointerValue<'a>,
         span: Span,
     ) -> CompileResult<()> {
-        if self.entries.symbols.contains_key(&name) {
+        if self.entries.variables.contains_key(&name) {
             return Err(CompileError::variable_already_declared(name, span));
         }
 
-        self.entries.symbols.insert(name, (value, ty));
+        self.entries
+            .variables
+            .insert(name, VariableEntry { pointer: value, ty });
         Ok(())
     }
 
@@ -62,7 +87,9 @@ impl<'a> SymbolTable<'a> {
             ));
         }
 
-        self.entries.functions.insert(name, (ty, function_type));
+        self.entries
+            .functions
+            .insert(name, FunctionEntry { ty, function_type });
         Ok(())
     }
 
@@ -79,7 +106,9 @@ impl<'a> SymbolTable<'a> {
             ));
         }
 
-        self.entries.structs.insert(name, (ty, struct_type));
+        self.entries
+            .structs
+            .insert(name, StructEntry { ty, struct_type });
         Ok(())
     }
 
@@ -93,12 +122,14 @@ impl<'a> SymbolTable<'a> {
             return Err(CompileError::type_already_declared(name, span));
         }
 
-        self.entries.type_aliases.insert(name, ty);
+        self.entries
+            .type_aliases
+            .insert(name, TypeAliasEntry { ty });
         Ok(())
     }
 
-    pub fn get_variable(&self, name: &str) -> Option<(PointerValue<'a>, CodegenType)> {
-        match self.entries.symbols.get(name) {
+    pub fn get_variable(&self, name: &str) -> Option<VariableEntry<'a>> {
+        match self.entries.variables.get(name) {
             Some(entry) => Some(entry.clone()),
             None => match self.parent {
                 Some(ref parent) => parent.get_variable(name),
@@ -107,7 +138,7 @@ impl<'a> SymbolTable<'a> {
         }
     }
 
-    pub fn get_function(&self, name: &str) -> Option<(types::FunctionType<'a>, FunctionType)> {
+    pub fn get_function(&self, name: &str) -> Option<FunctionEntry<'a>> {
         match self.entries.functions.get(name) {
             Some(entry) => Some(entry.clone()),
             None => match self.parent {
@@ -117,7 +148,7 @@ impl<'a> SymbolTable<'a> {
         }
     }
 
-    pub fn get_struct(&self, name: &str) -> Option<(types::StructType<'a>, StructType)> {
+    pub fn get_struct(&self, name: &str) -> Option<StructEntry<'a>> {
         match self.entries.structs.get(name) {
             Some(entry) => Some(entry.clone()),
             None => match self.parent {
@@ -127,7 +158,7 @@ impl<'a> SymbolTable<'a> {
         }
     }
 
-    pub fn get_type_alias(&self, name: &str) -> Option<CodegenType> {
+    pub fn get_type_alias(&self, name: &str) -> Option<TypeAliasEntry> {
         match self.entries.type_aliases.get(name) {
             Some(entry) => Some(entry.clone()),
             None => match self.parent {

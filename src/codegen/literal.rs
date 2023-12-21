@@ -75,7 +75,7 @@ pub struct Identifier {
 impl ExpressionCodegen for Identifier {
     fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
         let _symbol_table = compiler.symbol_table.clone();
-        let (ptr, ty) = match _symbol_table.get_variable(&self.identifier) {
+        let entry = match _symbol_table.get_variable(&self.identifier) {
             Some(entry) => entry,
             None => {
                 return Err(CompileError::identifier_not_found(
@@ -87,11 +87,11 @@ impl ExpressionCodegen for Identifier {
 
         Ok(Value::new(
             compiler.builder.build_load(
-                ty.to_llvm_type(compiler.context),
-                ptr,
+                entry.ty.to_llvm_type(compiler.context),
+                entry.pointer,
                 format!("load.{}", self.identifier).as_str(),
             ),
-            ty.clone(),
+            entry.ty.clone(),
         ))
     }
 }
@@ -290,7 +290,7 @@ pub struct StructLiteral {
 impl ExpressionCodegen for StructLiteral {
     fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
         let _symbol_table = compiler.symbol_table.clone();
-        let (llvm_struct_type, struct_type) = match _symbol_table.get_struct(&self.name.identifier)
+        let entry = match _symbol_table.get_struct(&self.name.identifier)
         {
             Some(entry) => entry,
             None => {
@@ -301,9 +301,9 @@ impl ExpressionCodegen for StructLiteral {
             }
         };
 
-        if self.fields.len() != struct_type.fields.len() {
+        if self.fields.len() != entry.struct_type.fields.len() {
             return Err(CompileError::wrong_number_of_fields(
-                struct_type.fields.len(),
+                entry.struct_type.fields.len(),
                 self.fields.len(),
                 self.span,
             ));
@@ -316,7 +316,7 @@ impl ExpressionCodegen for StructLiteral {
             let value = val.1.codegen(compiler)?;
             values.push(value.llvm_value);
 
-            let field_type = match struct_type.fields.get(val.0) {
+            let field_type = match entry.struct_type.fields.get(val.0) {
                 Some((_, ty)) => ty.clone(),
                 None => return Err(CompileError::field_not_found(val.0.clone(), self.span)),
             };
@@ -333,7 +333,7 @@ impl ExpressionCodegen for StructLiteral {
         }
 
         let ptr = compiler.builder.build_alloca(
-            llvm_struct_type,
+            entry.ty,
             format!("struct.{}", self.name.identifier).as_str(),
         );
 
@@ -362,7 +362,7 @@ impl ExpressionCodegen for StructLiteral {
 
 impl DisplayNode for StructLiteral {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
-        write!(f, "struct {} {{", self.name.identifier)?;
+        write!(f, "{} {{", self.name.identifier)?;
         for (i, val) in self.fields.iter().enumerate() {
             writeln!(f)?;
             display::indent(f, indent + 1)?;

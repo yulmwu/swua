@@ -49,30 +49,24 @@ impl AstTypeKind {
                 len: array_type.len,
                 span: array_type.span,
             }),
-            AstTypeKind::TypeAlias(name) => {
-                let ty = match symbol_table.get_type_alias(&name.identifier) {
-                    Some(ty) => ty,
-                    None => {
-                        return Err(CompileError::type_not_found(
-                            name.identifier.clone(),
-                            name.span,
-                        ))
-                    }
-                };
-                ty.clone()
-            }
-            AstTypeKind::Struct(name) => {
-                let struct_type = match symbol_table.get_struct(&name.identifier) {
-                    Some(struct_type) => struct_type,
-                    None => {
-                        return Err(CompileError::struct_not_found(
-                            name.identifier.clone(),
-                            name.span,
-                        ))
-                    }
-                };
-                CodegenType::Struct(struct_type.1.clone())
-            }
+            AstTypeKind::TypeAlias(name) => match symbol_table.get_type_alias(&name.identifier) {
+                Some(ty) => ty.ty,
+                None => {
+                    return Err(CompileError::type_not_found(
+                        name.identifier.clone(),
+                        name.span,
+                    ))
+                }
+            },
+            AstTypeKind::Struct(name) => match symbol_table.get_struct(&name.identifier) {
+                Some(struct_type) => CodegenType::Struct(struct_type.struct_type),
+                None => {
+                    return Err(CompileError::struct_not_found(
+                        name.identifier.clone(),
+                        name.span,
+                    ))
+                }
+            },
             AstTypeKind::Pointer(ty) => {
                 CodegenType::Pointer(Box::new(ty.kind.to_codegen_type(symbol_table)?))
             }
@@ -86,7 +80,7 @@ impl fmt::Display for AstTypeKind {
             AstTypeKind::Int => write!(f, "int"),
             AstTypeKind::Float => write!(f, "float"),
             AstTypeKind::Boolean => write!(f, "boolean"),
-            AstTypeKind::String => write!(f, "string"),
+            AstTypeKind::String => write!(f, "str"),
             AstTypeKind::Void => write!(f, "void"),
             AstTypeKind::Array(array_type) => write!(
                 f,

@@ -50,7 +50,6 @@ impl DisplayNode for Statement {
                     Statement::Expression(expression) => {
                         display::indent(f, indent)?;
                         expression.display(f, indent)?;
-                        write!(f, ";")?;
                     },
                     $(
                         Statement::$ident(statement) => { statement.display(f, indent)?; },
@@ -116,8 +115,7 @@ impl DisplayNode for LetStatement {
             write!(f, ": {}", ty.kind)?;
         }
         write!(f, " = ")?;
-        self.value.display(f, indent)?;
-        write!(f, ";")
+        self.value.display(f, indent)
     }
 }
 
@@ -229,17 +227,23 @@ impl StatementCodegen for FunctionDefinition {
 impl DisplayNode for FunctionDefinition {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         display::indent(f, indent)?;
-        write!(f, "fn ")?;
+        write!(f, "define ")?;
         self.name.display(f, indent)?;
-        write!(f, "(")?;
-        for (i, parameter) in self.parameters.iter().enumerate() {
-            parameter.name.display(f, indent)?;
-            write!(f, ": {}", parameter.ty.kind)?;
-            if i != self.parameters.len() - 1 {
-                write!(f, ", ")?;
+
+        if !self.parameters.is_empty() {
+            write!(f, "(")?;
+            for (i, parameter) in self.parameters.iter().enumerate() {
+                parameter.name.display(f, indent)?;
+                write!(f, " {}", parameter.ty.kind)?;
+                if i != self.parameters.len() - 1 {
+                    write!(f, ", ")?;
+                }
             }
+            write!(f, ")")?;
         }
-        write!(f, ") -> {} ", self.return_type.kind)?;
+
+        write!(f, " -> {} =", self.return_type.kind)?;
+
         self.body.display(f, indent)
     }
 }
@@ -303,7 +307,7 @@ impl StatementCodegen for ExternalFunctionDeclaration {
 impl DisplayNode for ExternalFunctionDeclaration {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         display::indent(f, indent)?;
-        write!(f, "extern fn ")?;
+        write!(f, "extern ")?;
         self.name.display(f, indent)?;
         write!(f, "(")?;
         for (i, parameter) in self.parameters.iter().enumerate() {
@@ -312,7 +316,7 @@ impl DisplayNode for ExternalFunctionDeclaration {
                 write!(f, ", ")?;
             }
         }
-        write!(f, ") -> {};", self.return_type.kind)
+        write!(f, ") -> {}", self.return_type.kind)
     }
 }
 
@@ -367,18 +371,13 @@ impl DisplayNode for StructDeclaration {
         display::indent(f, indent)?;
         write!(f, "struct ")?;
         self.name.display(f, indent)?;
-        write!(f, " {{ ")?;
-        for (i, (name, ty)) in self.fields.iter().enumerate() {
+        for (name, ty) in self.fields.iter() {
             writeln!(f)?;
             display::indent(f, indent + 1)?;
-            write!(f, "{}: {}", name, ty.kind)?;
-            if i != self.fields.len() - 1 {
-                write!(f, ", ")?;
-            }
+            write!(f, "| {} {}", name, ty.kind)?;
         }
         writeln!(f)?;
-        display::indent(f, indent)?;
-        write!(f, "}};")
+        display::indent(f, indent)
     }
 }
 
@@ -413,8 +412,7 @@ impl DisplayNode for ReturnStatement {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         display::indent(f, indent)?;
         write!(f, "return ")?;
-        self.value.display(f, indent)?;
-        write!(f, ";")
+        self.value.display(f, indent)
     }
 }
 
@@ -529,6 +527,7 @@ impl StatementCodegen for TypeDeclaration {
 impl DisplayNode for TypeDeclaration {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         display::indent(f, indent)?;
+        write!(f, "type ")?;
         self.name.display(f, indent)?;
         write!(f, " = {}", self.ty.kind)
     }
@@ -550,6 +549,7 @@ impl StatementCodegen for Declaration {
 impl DisplayNode for Declaration {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         display::indent(f, indent)?;
+        write!(f, "declare ")?;
         self.name.display(f, indent)?;
         write!(f, " = {}", self.ty.kind)
     }
@@ -607,11 +607,9 @@ impl DisplayNode for While {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         display::indent(f, indent)?;
         writeln!(f, "while ")?;
-        self.condition.display(f, indent + 1)?;
-        writeln!(f, " {{")?;
-        self.body.display(f, indent + 1)?;
-        display::indent(f, indent)?;
-        write!(f, "}}")
+        self.condition.display(f, indent)?;
+        writeln!(f)?;
+        self.body.display(f, indent)
     }
 }
 
@@ -638,11 +636,10 @@ impl StatementCodegen for Block {
 
 impl DisplayNode for Block {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
-        writeln!(f, "{{")?;
+        writeln!(f)?;
         for statement in self.statements.clone() {
             statement.display(f, indent + 1)?;
         }
-        display::indent(f, indent)?;
-        write!(f, "}}")
+        display::indent(f, indent)
     }
 }
