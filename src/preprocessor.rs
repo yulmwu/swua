@@ -15,7 +15,13 @@ where
     current_token: Token,
     peek_token: Token,
     span: Span,
-    pub defines: Vec<(String, Vec<Token>)>,
+    pub defines: Vec<Define>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Define {
+    pub identifier: Identifier,
+    pub tokens: Vec<Token>,
 }
 
 impl<T> Preprocessor<T>
@@ -110,23 +116,23 @@ where
         let mut tokens = Vec::new();
 
         while self.current_token.kind != TokenKind::Newline && !self.is_eof() {
-            tokens.push(self.current_token.clone());
+            match self.current_token.kind.clone() {
+                TokenKind::Sharp => self.preprocess_directive()?,
+                TokenKind::Identifier(identifier) => {
+                    self.preprocess_identifier(&mut tokens, identifier)?
+                }
+                _ => tokens.push(self.current_token.clone()),
+            }
             self.next_token();
         }
 
-        self.defines.push((identifier.identifier, tokens));
+        self.defines.push(Define { identifier, tokens });
 
         Ok(())
     }
 
     fn preprocess_defln(&mut self) -> ParseResult<()> {
         self.expect_token_consume(TokenKind::Defln)?;
-
-        /*
-        #defln FOO
-        ..
-        #end
-        */
 
         let identifier = identifier! { self };
         self.next_token();
@@ -137,13 +143,19 @@ where
             || self.current_token.kind == TokenKind::Sharp
                 && self.peek_token.kind == TokenKind::End)
         {
-            tokens.push(self.current_token.clone());
+            match self.current_token.kind.clone() {
+                TokenKind::Sharp => self.preprocess_directive()?,
+                TokenKind::Identifier(identifier) => {
+                    self.preprocess_identifier(&mut tokens, identifier)?
+                }
+                _ => tokens.push(self.current_token.clone()),
+            }
             self.next_token();
         }
 
         self.next_token();
 
-        self.defines.push((identifier.identifier, tokens));
+        self.defines.push(Define { identifier, tokens });
 
         Ok(())
     }
@@ -153,7 +165,14 @@ where
         tokens: &mut Vec<Token>,
         identifier: String,
     ) -> ParseResult<()> {
-        if let Some((_, replacement)) = self.defines.iter().find(|(name, _)| name == &identifier) {
+        if let Some(Define {
+            tokens: replacement,
+            ..
+        }) = self
+            .defines
+            .iter()
+            .find(|def| def.identifier.identifier == identifier)
+        {
             replacement
                 .iter()
                 .for_each(|token| tokens.push(token.clone()));
