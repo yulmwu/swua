@@ -23,9 +23,9 @@ pub struct Compiler<'a> {
     pub context: &'a Context,
     pub module: Module<'a>,
     pub builder: Builder<'a>,
-    pub symbol_table: SymbolTable<'a>,
     pub current_function: Option<CurrentFunction<'a>>,
     pub current_return: Option<Value<'a>>,
+    pub symbol_table: SymbolTable<'a>,
 }
 
 #[derive(Debug, Clone)]
@@ -132,9 +132,9 @@ impl Program {
             context,
             module,
             builder,
-            symbol_table,
             current_function: None,
             current_return: None,
+            symbol_table,
         };
 
         for statement in self.statements.clone() {
