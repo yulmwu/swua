@@ -2,7 +2,7 @@ extern print_str(str) -> str
 extern to_str(int) -> str
 extern concat_str(str, str) -> str
 
-define main() -> int =
+define main -> int =
     let arr = [1, 2, 3, 4, 5]
     let len = (sizeof arr) / sizeof arr[0]
     let i = 0

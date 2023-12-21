@@ -12,7 +12,7 @@ define foo(x int*, value int) -> int =
     *x = value
     return *x
 
-define main() -> int =
+define main -> int =
     let x = 3
     let ptr = &x
     print_pointer(ptr)
