@@ -290,8 +290,7 @@ pub struct StructLiteral {
 impl ExpressionCodegen for StructLiteral {
     fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
         let _symbol_table = compiler.symbol_table.clone();
-        let entry = match _symbol_table.get_struct(&self.name.identifier)
-        {
+        let entry = match _symbol_table.get_struct(&self.name.identifier) {
             Some(entry) => entry,
             None => {
                 return Err(CompileError::struct_not_found(

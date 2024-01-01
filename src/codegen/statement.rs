@@ -18,7 +18,6 @@ pub enum Statement {
     Return(ReturnStatement),
     If(IfStatement),
     Type(TypeDeclaration),
-    Declaration(Declaration),
     While(While),
 }
 
@@ -35,7 +34,7 @@ impl StatementCodegen for Statement {
         }
 
         inner! {
-            Expression Let Function ExternalFunction Struct Return If Type Declaration While
+            Expression Let Function ExternalFunction Struct Return If Type While
         }
 
         Ok(())
@@ -59,7 +58,7 @@ impl DisplayNode for Statement {
         }
 
         inner! {
-            Let Function ExternalFunction Struct Return If Type Declaration While
+            Let Function ExternalFunction Struct Return If Type While
         }
 
         writeln!(f)
@@ -528,28 +527,6 @@ impl DisplayNode for TypeDeclaration {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         display::indent(f, indent)?;
         write!(f, "type ")?;
-        self.name.display(f, indent)?;
-        write!(f, " = {}", self.ty.kind)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Declaration {
-    pub name: Identifier,
-    pub ty: AstType,
-    pub span: Span,
-}
-
-impl StatementCodegen for Declaration {
-    fn codegen(&self, _: &mut Compiler) -> CompileResult<()> {
-        todo!()
-    }
-}
-
-impl DisplayNode for Declaration {
-    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
-        display::indent(f, indent)?;
-        write!(f, "declare ")?;
         self.name.display(f, indent)?;
         write!(f, " = {}", self.ty.kind)
     }
