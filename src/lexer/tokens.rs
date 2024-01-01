@@ -8,7 +8,7 @@ pub enum TokenKind {
 
     Identifier(String), Int(i64), Float(f64), String(String), Boolean(bool), Comment,
 
-    Assign, Plus, Minus, Bang, Asterisk, Slash, Percent, Arrow, DoubleArrow, Ampersand, At, Sharp, Pipe,
+    Assign, Plus, Minus, Bang, Asterisk, Slash, Percent, Arrow, LArrow, DoubleArrow, Ampersand, At, Sharp, Pipe,
 
     Dot, Comma, Colon, DoubleColon, Semicolon,
 
@@ -16,7 +16,7 @@ pub enum TokenKind {
 
     LT, GT, LTE, GTE, EQ, NEQ,
 
-    Let, Define, If, Else, Return, Type, Struct, While, As,
+    Let, Define, If, Else, Return, Type, Struct, While, As, For, Foreach,
 
     IntType, FloatType, StringType, BooleanType, VoidType,
 
@@ -37,6 +37,8 @@ impl From<&str> for TokenKind {
             "struct" => TokenKind::Struct,
             "while" => TokenKind::While,
             "as" => TokenKind::As,
+            "for" => TokenKind::For,
+            "foreach" => TokenKind::Foreach,
             "true" => TokenKind::Boolean(true),
             "false" => TokenKind::Boolean(false),
             "int" => TokenKind::IntType,

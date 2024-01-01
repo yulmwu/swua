@@ -407,7 +407,7 @@ impl Lexer {
                 self.nested_indent -= 1;
                 self.single(TokenKind::RBracket)
             }
-            '<' => self.double(TokenKind::LT, '=', TokenKind::LTE),
+            '<' => self.triple(TokenKind::LT, '=', TokenKind::LTE, '-', TokenKind::LArrow),
             '>' => self.double(TokenKind::GT, '=', TokenKind::GTE),
             '|' => self.single(TokenKind::Pipe),
             '\0' => {
