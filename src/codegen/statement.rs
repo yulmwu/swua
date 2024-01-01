@@ -19,6 +19,8 @@ pub enum Statement {
     If(IfStatement),
     Type(TypeDeclaration),
     While(While),
+    For(For),
+    Foreach(Foreach),
 }
 
 impl StatementCodegen for Statement {
@@ -34,7 +36,7 @@ impl StatementCodegen for Statement {
         }
 
         inner! {
-            Expression Let Function ExternalFunction Struct Return If Type While
+            Expression Let Function ExternalFunction Struct Return If Type While For Foreach
         }
 
         Ok(())
@@ -58,7 +60,7 @@ impl DisplayNode for Statement {
         }
 
         inner! {
-            Let Function ExternalFunction Struct Return If Type While
+            Let Function ExternalFunction Struct Return If Type While For Foreach
         }
 
         writeln!(f)
@@ -586,6 +588,131 @@ impl DisplayNode for While {
         writeln!(f, "while ")?;
         self.condition.display(f, indent)?;
         writeln!(f)?;
+        self.body.display(f, indent)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct For {
+    pub initialization: ForInitialization,
+    pub condition: Expression,
+    pub increment: Expression,
+    pub body: Block,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ForInitialization {
+    pub name: Identifier,
+    pub value: Expression,
+    pub span: Span,
+}
+
+impl StatementCodegen for For {
+    fn codegen(&self, compiler: &mut Compiler) -> CompileResult<()> {
+        let function = compiler.current_function.clone().unwrap().function;
+
+        let condition_block = compiler.context.append_basic_block(function, "for.cond");
+        let body_block = compiler.context.append_basic_block(function, "for.body");
+        let increment_block = compiler.context.append_basic_block(function, "for.inc");
+        let end_block = compiler.context.append_basic_block(function, "for.end");
+
+        let value = self.initialization.value.codegen(compiler)?;
+        let alloca = compiler.builder.build_alloca(
+            value.ty.to_llvm_type(compiler.context),
+            &self.initialization.name.identifier,
+        );
+        compiler.builder.build_store(alloca, value.llvm_value);
+
+        let original_symbol_table = compiler.symbol_table.clone();
+        compiler.symbol_table = SymbolTable::new_with_parent(compiler.symbol_table.clone());
+
+        compiler.symbol_table.insert_variable(
+            self.initialization.name.identifier.clone(),
+            value.ty,
+            alloca,
+            self.initialization.name.span,
+        )?;
+
+        compiler.builder.build_unconditional_branch(condition_block);
+
+        compiler.builder.position_at_end(condition_block);
+        let condition = self.condition.codegen(compiler)?;
+        if condition.ty != CodegenType::Boolean {
+            return Err(CompileError::type_mismatch(
+                CodegenType::Boolean,
+                condition.ty,
+                self.condition.clone().into(),
+            ));
+        }
+
+        let condition = compiler.builder.build_int_compare(
+            IntPredicate::NE,
+            condition.llvm_value.into_int_value(),
+            compiler.context.i64_type().const_int(0, false),
+            "for.cond",
+        );
+        compiler
+            .builder
+            .build_conditional_branch(condition, body_block, end_block);
+
+        compiler.builder.position_at_end(body_block);
+
+        for statement in self.body.statements.clone() {
+            statement.codegen(compiler)?;
+        }
+
+        compiler.builder.build_unconditional_branch(increment_block);
+
+        compiler.builder.position_at_end(increment_block);
+        self.increment.codegen(compiler)?;
+
+        compiler.builder.build_unconditional_branch(condition_block);
+
+        compiler.builder.position_at_end(end_block);
+
+        compiler.symbol_table = original_symbol_table;
+
+        Ok(())
+    }
+}
+
+impl DisplayNode for For {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        display::indent(f, indent)?;
+        write!(f, "for ")?;
+        self.initialization.name.display(f, indent)?;
+        write!(f, " = ")?;
+        self.initialization.value.display(f, indent)?;
+        write!(f, "; ")?;
+        self.condition.display(f, indent)?;
+        write!(f, "; ")?;
+        self.increment.display(f, indent)?;
+        self.body.display(f, indent)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Foreach {
+    pub name: Identifier,
+    pub array: Expression,
+    pub body: Block,
+    pub span: Span,
+}
+
+impl StatementCodegen for Foreach {
+    fn codegen(&self, _: &mut Compiler) -> CompileResult<()> {
+        todo!()
+    }
+}
+
+impl DisplayNode for Foreach {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        display::indent(f, indent)?;
+        write!(f, "foreach ")?;
+        self.name.display(f, indent)?;
+        write!(f, " <- ")?;
+        self.array.display(f, indent)?;
         self.body.display(f, indent)
     }
 }
