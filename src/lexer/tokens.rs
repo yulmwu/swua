@@ -16,7 +16,7 @@ pub enum TokenKind {
 
     LT, GT, LTE, GTE, EQ, NEQ,
 
-    Let, Define, If, Else, Return, Type, Declare, Struct, While, As,
+    Let, Define, If, Else, Return, Type, Struct, While, As,
 
     IntType, FloatType, StringType, BooleanType, VoidType,
 
@@ -34,7 +34,6 @@ impl From<&str> for TokenKind {
             "else" => TokenKind::Else,
             "return" => TokenKind::Return,
             "type" => TokenKind::Type,
-            "declare" => TokenKind::Declare,
             "struct" => TokenKind::Struct,
             "while" => TokenKind::While,
             "as" => TokenKind::As,

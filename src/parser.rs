@@ -4,11 +4,11 @@ use crate::{
     codegen::{
         types::{AstArrayTypeKind, AstType, AstTypeKind},
         ArrayLiteral, AssignExpression, BinaryExpression, Block, BooleanLiteral, CallExpression,
-        CastExpression, Declaration, DereferenceExpression, Expression,
-        ExternalFunctionDeclaration, FloatLiteral, FunctionDefinition, Identifier, IfStatement,
-        IndexExpression, IntLiteral, LetStatement, Literal, Parameter, PointerExpression,
-        ReturnStatement, SizeofExpression, Statement, StringLiteral, StructDeclaration,
-        StructLiteral, TypeDeclaration, TypeofExpression, UnaryExpression, While,
+        CastExpression, DereferenceExpression, Expression, ExternalFunctionDeclaration,
+        FloatLiteral, FunctionDefinition, Identifier, IfStatement, IndexExpression, IntLiteral,
+        LetStatement, Literal, Parameter, PointerExpression, ReturnStatement, SizeofExpression,
+        Statement, StringLiteral, StructDeclaration, StructLiteral, TypeDeclaration,
+        TypeofExpression, UnaryExpression, While,
     },
     lexer::{
         tokens::{Token, TokenKind},
@@ -216,7 +216,6 @@ where
             TokenKind::Return => Statement::Return(self.parse_return_statement()?),
             TokenKind::If => Statement::If(self.parse_if_statement()?),
             TokenKind::Type => Statement::Type(self.parse_type_statement()?),
-            TokenKind::Declare => Statement::Declaration(self.parse_declare_statement()?),
             TokenKind::Struct => Statement::Struct(self.parse_struct_declaration()?),
             TokenKind::While => Statement::While(self.parse_while_statement()?),
             _ => self.parse_expression_statement()?,
@@ -487,23 +486,7 @@ where
         })
     }
 
-    fn parse_declare_statement(&mut self) -> ParseResult<Declaration> {
-        todo!()
-    }
-
     fn parse_struct_declaration(&mut self) -> ParseResult<StructDeclaration> {
-        /*
-        struct Foo
-            | a: int
-            | b: int
-
-        struct <identifier>
-        <indent> | <identifier>: <type>
-        <indent> | <identifier>: <type>
-        ...
-        <dedent>
-        */
-
         let position = self.span.start;
         self.next_token();
 
@@ -526,7 +509,7 @@ where
                 let ty = self.parse_ty()?;
                 self.next_token();
 
-                fields.insert(key.identifier.clone(), ty); // newline pipe .. newline dedent
+                fields.insert(key.identifier.clone(), ty);
 
                 self.expect_token_consume(TokenKind::Newline)?;
 
@@ -628,7 +611,6 @@ where
 
                 Some(expression)
             }
-            // TokenKind::LBrace => Some(Ok(Expression::Block(self.parse_block_expression()?))),
             TokenKind::LBracket => Some(Ok(Expression::Literal(Literal::Array(
                 self.parse_array_literal()?,
             )))),
