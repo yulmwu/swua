@@ -5,10 +5,10 @@ use crate::{
         types::{AstArrayTypeKind, AstType, AstTypeKind},
         ArrayLiteral, AssignExpression, BinaryExpression, Block, BooleanLiteral, CallExpression,
         CastExpression, DereferenceExpression, Expression, ExternalFunctionDeclaration,
-        FloatLiteral, FunctionDefinition, Identifier, IfStatement, IndexExpression, IntLiteral,
-        LetStatement, Literal, Parameter, PointerExpression, ReturnStatement, SizeofExpression,
-        Statement, StringLiteral, StructDeclaration, StructLiteral, TypeDeclaration,
-        TypeofExpression, UnaryExpression, While,
+        FloatLiteral, For, ForInitialization, Foreach, FunctionDefinition, Identifier, IfStatement,
+        IndexExpression, IntLiteral, LetStatement, Literal, Parameter, PointerExpression,
+        ReturnStatement, SizeofExpression, Statement, StringLiteral, StructDeclaration,
+        StructLiteral, TypeDeclaration, TypeofExpression, UnaryExpression, While,
     },
     lexer::{
         tokens::{Token, TokenKind},
@@ -218,6 +218,8 @@ where
             TokenKind::Type => Statement::Type(self.parse_type_statement()?),
             TokenKind::Struct => Statement::Struct(self.parse_struct_declaration()?),
             TokenKind::While => Statement::While(self.parse_while_statement()?),
+            TokenKind::For => Statement::For(self.parse_for_statement()?),
+            TokenKind::Foreach => Statement::Foreach(self.parse_for_each_statement()?),
             _ => self.parse_expression_statement()?,
         })
     }
@@ -547,6 +549,71 @@ where
 
         Ok(While {
             condition,
+            body,
+            span: Span::new(position, self.span.end),
+        })
+    }
+
+    fn parse_for_statement(&mut self) -> ParseResult<For> {
+        let position = self.span.start;
+        self.next_token();
+
+        let initialization = {
+            let identifier = identifier! { self };
+            self.next_token();
+
+            self.expect_token_consume(TokenKind::Assign)?;
+
+            let value = self.parse_expression(Priority::Lowest)?;
+            self.next_token();
+
+            ForInitialization {
+                name: identifier,
+                value,
+                span: Span::new(position, self.span.end),
+            }
+        };
+
+        self.expect_token_consume(TokenKind::Semicolon)?;
+
+        let condition = self.parse_expression(Priority::Lowest)?;
+        self.next_token();
+
+        self.expect_token_consume(TokenKind::Semicolon)?;
+
+        let increment = self.parse_expression(Priority::Lowest)?;
+        self.next_token();
+
+        let body = self.parse_block(true)?;
+        self.next_token();
+
+        Ok(For {
+            initialization,
+            condition,
+            increment,
+            body,
+            span: Span::new(position, self.span.end),
+        })
+    }
+
+    fn parse_for_each_statement(&mut self) -> ParseResult<Foreach> {
+        let position = self.span.start;
+        self.next_token();
+
+        let identifier = identifier! { self };
+        self.next_token();
+
+        self.expect_token_consume(TokenKind::LArrow)?;
+
+        let array = self.parse_expression(Priority::Lowest)?;
+        self.next_token();
+
+        let body = self.parse_block(true)?;
+        self.next_token();
+
+        Ok(Foreach {
+            name: identifier,
+            array,
             body,
             span: Span::new(position, self.span.end),
         })
