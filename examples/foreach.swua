@@ -1,0 +1,9 @@
+// not yet implemented
+
+extern print(int) -> int
+
+define main -> int =
+    foreach i <- [1, 2, 3]
+        print(i)
+
+    return 0

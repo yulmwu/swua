@@ -1,0 +1,7 @@
+extern print(int) -> int
+
+define main -> int =
+    for i = 0; i < 10; i = i + 1
+        print(i)
+
+    return 0
