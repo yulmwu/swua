@@ -379,7 +379,29 @@ impl Lexer {
             '&' => self.single(TokenKind::Ampersand),
             '@' => self.single(TokenKind::At),
             '#' => self.single(TokenKind::Sharp),
-            '.' => self.single(TokenKind::Dot),
+            '.' => {
+                self.read_char();
+                if self.current_char == '.' {
+                    self.read_char();
+                    if self.current_char == '.' {
+                        self.read_char();
+                        self.tokens.push(Token::new(
+                            TokenKind::Ellipsis,
+                            self.span_from(start_position),
+                        ));
+                        Ok(())
+                    } else {
+                        Err(LexingError::unexpected_character(
+                            self.current_char.to_string(),
+                            self.span_from(start_position),
+                        ))
+                    }
+                } else {
+                    self.tokens
+                        .push(Token::new(TokenKind::Dot, self.span_from(start_position)));
+                    Ok(())
+                }
+            }
             ',' => self.single(TokenKind::Comma),
             ':' => self.double(TokenKind::Colon, ':', TokenKind::DoubleColon),
             ';' => self.single(TokenKind::Semicolon),
