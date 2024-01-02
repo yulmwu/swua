@@ -410,6 +410,7 @@ impl Lexer {
             '<' => self.triple(TokenKind::LT, '=', TokenKind::LTE, '-', TokenKind::LArrow),
             '>' => self.double(TokenKind::GT, '=', TokenKind::GTE),
             '|' => self.single(TokenKind::Pipe),
+            '?' => self.single(TokenKind::Question),
             '\0' => {
                 self.tokens
                     .push(Token::new(TokenKind::EOF, self.span_from(start_position)));
