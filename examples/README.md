@@ -8,3 +8,6 @@
 -   [Pointer](./pointer.swua)
 -   [Cast](./cast.swua)
 -   [Macro Directives](./macro_directives.swua)
+-   [For](./for.swua)
+-   [For Each](./foreach.swua)
+-   [Ternary Operator](./ternary.swua)

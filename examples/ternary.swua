@@ -1,0 +1,14 @@
+extern print_str(str) -> str
+
+define main -> int =
+    let a = 3
+    let b = 2
+
+    print_str(a == b
+        ? "a equals b"
+        : a < b
+            ? "a is less than b"
+            : "a is greater than b"
+    )
+
+    return 0
