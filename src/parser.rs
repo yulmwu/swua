@@ -318,7 +318,7 @@ where
 
         self.expect_token_consume(TokenKind::Assign)?;
 
-        let body = self.parse_block(true)?;
+        let body = self.parse_block()?;
         self.next_token();
 
         Ok(FunctionDefinition {
@@ -330,12 +330,23 @@ where
         })
     }
 
-    fn parse_block(&mut self, check_indent: bool) -> ParseResult<Block> {
+    fn parse_block(&mut self) -> ParseResult<Block> {
         let position = self.span.start;
-        if check_indent {
-            self.next_token();
-            self.expect_token_consume(TokenKind::Indent)?;
+
+        if self.current_token.kind != TokenKind::Newline {
+            return Ok(Block {
+                statements: vec![Statement::Return(ReturnStatement {
+                    value: self.parse_expression(Priority::Lowest)?,
+                    span: self.span,
+                })],
+                span: Span::new(position, self.span.end),
+            });
         }
+
+        while self.current_token.kind == TokenKind::Newline {
+            self.next_token();
+        }
+        self.expect_token_consume(TokenKind::Indent)?;
 
         let mut statements = Vec::new();
 
@@ -437,7 +448,7 @@ where
         let condition = self.parse_expression(Priority::Lowest)?;
         self.next_token();
 
-        let consequence = self.parse_block(true)?;
+        let consequence = self.parse_block()?;
         self.next_token();
 
         let alternative = if self.current_token.kind == TokenKind::Else {
@@ -450,7 +461,7 @@ where
                     span: Span::new(position, self.span.end),
                 })
             } else {
-                let block = self.parse_block(true)?;
+                let block = self.parse_block()?;
                 self.next_token();
 
                 Some(block)
@@ -544,7 +555,7 @@ where
         let condition = self.parse_expression(Priority::Lowest)?;
         self.next_token();
 
-        let body = self.parse_block(true)?;
+        let body = self.parse_block()?;
         self.next_token();
 
         Ok(While {
@@ -584,7 +595,7 @@ where
         let increment = self.parse_expression(Priority::Lowest)?;
         self.next_token();
 
-        let body = self.parse_block(true)?;
+        let body = self.parse_block()?;
         self.next_token();
 
         Ok(For {
