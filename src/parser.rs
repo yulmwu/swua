@@ -8,7 +8,8 @@ use crate::{
         FloatLiteral, For, ForInitialization, Foreach, FunctionDefinition, Identifier, IfStatement,
         IndexExpression, IntLiteral, LetStatement, Literal, Parameter, PointerExpression,
         ReturnStatement, SizeofExpression, Statement, StringLiteral, StructDeclaration,
-        StructLiteral, TypeDeclaration, TypeofExpression, UnaryExpression, While,
+        StructLiteral, TernaryExpression, TypeDeclaration, TypeofExpression, UnaryExpression,
+        While,
     },
     lexer::{
         tokens::{Token, TokenKind},
@@ -862,6 +863,21 @@ where
                     Ok(Expression::Cast(CastExpression {
                         expression: Box::new(left_expression?),
                         cast_ty: self.parse_ty()?,
+                        span: self.span,
+                    }))
+                }
+                TokenKind::Question => {
+                    self.next_token();
+
+                    let consequence = self.parse_expression(Priority::Lowest)?;
+                    self.next_token();
+
+                    self.expect_token_consume(TokenKind::Colon)?;
+
+                    Ok(Expression::Ternary(TernaryExpression {
+                        condition: Box::new(left_expression?),
+                        consequence: Box::new(consequence),
+                        alternative: Box::new(self.parse_expression(Priority::Lowest)?),
                         span: self.span,
                     }))
                 }

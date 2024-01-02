@@ -255,7 +255,7 @@ impl From<TokenKind> for Priority {
         use Priority::*;
         use TokenKind::*;
         match token_kind {
-            Assign => Assign_,
+            Assign | Question => Assign_,
             EQ | NEQ => Equals,
             LT | GT | LTE | GTE => LessGreater,
             Plus | Minus => Sum,
