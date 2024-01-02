@@ -19,6 +19,7 @@ pub enum Expression {
     Cast(CastExpression),
     Pointer(PointerExpression),
     Dereference(DereferenceExpression),
+    Ternary(TernaryExpression),
 }
 
 impl ExpressionCodegen for Expression {
@@ -32,7 +33,7 @@ impl ExpressionCodegen for Expression {
                 }
             };
         }
-        inner! { Literal Binary Unary Assign Call Index Typeof Sizeof Cast Dereference Pointer }
+        inner! { Literal Binary Unary Assign Call Index Typeof Sizeof Cast Dereference Pointer Ternary }
     }
 }
 
@@ -49,7 +50,7 @@ impl From<Expression> for Span {
             };
         }
 
-        inner! { Binary Unary Assign Call Index Typeof Sizeof Cast Dereference Pointer }
+        inner! { Binary Unary Assign Call Index Typeof Sizeof Cast Dereference Pointer Ternary }
     }
 }
 
@@ -65,7 +66,7 @@ impl DisplayNode for Expression {
             };
         }
 
-        inner! { Literal Binary Unary Assign Call Index Typeof Sizeof Cast Dereference Pointer }
+        inner! { Literal Binary Unary Assign Call Index Typeof Sizeof Cast Dereference Pointer Ternary }
     }
 }
 
@@ -887,5 +888,54 @@ impl DisplayNode for DereferenceExpression {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         write!(f, "*")?;
         self.expression.display(f, indent)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TernaryExpression {
+    pub condition: Box<Expression>,
+    pub consequence: Box<Expression>,
+    pub alternative: Box<Expression>,
+    pub span: Span,
+}
+
+impl ExpressionCodegen for TernaryExpression {
+    fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
+        let condition = self.condition.codegen(compiler)?;
+
+        let condition = match condition.ty {
+            CodegenType::Boolean => condition.llvm_value.into_int_value(),
+            _ => return Err(CompileError::expected("boolean", self.span)),
+        };
+
+        let consequence = self.consequence.codegen(compiler)?;
+        let alternative = self.alternative.codegen(compiler)?;
+
+        if consequence.ty != alternative.ty {
+            return Err(CompileError::type_mismatch(
+                consequence.ty,
+                alternative.ty,
+                self.span,
+            ));
+        }
+
+        let result = compiler.builder.build_select(
+            condition,
+            consequence.llvm_value,
+            alternative.llvm_value,
+            "ternary",
+        );
+
+        Ok(Value::new(result, consequence.ty))
+    }
+}
+
+impl DisplayNode for TernaryExpression {
+    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
+        self.condition.display(f, indent)?;
+        write!(f, " ? ")?;
+        self.consequence.display(f, indent)?;
+        write!(f, " : ")?;
+        self.alternative.display(f, indent)
     }
 }
