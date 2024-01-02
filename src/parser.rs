@@ -220,6 +220,10 @@ where
             TokenKind::Struct => Statement::Struct(self.parse_struct_declaration()?),
             TokenKind::While => Statement::While(self.parse_while_statement()?),
             TokenKind::For => Statement::For(self.parse_for_statement()?),
+            TokenKind::Ellipsis => {
+                self.next_token();
+                Statement::Ellipsis
+            }
             _ => self.parse_expression_statement()?,
         })
     }
