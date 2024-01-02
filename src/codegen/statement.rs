@@ -20,6 +20,7 @@ pub enum Statement {
     Type(TypeDeclaration),
     While(While),
     For(For),
+    Ellipsis,
 }
 
 impl StatementCodegen for Statement {
@@ -30,6 +31,7 @@ impl StatementCodegen for Statement {
                     $(
                         Statement::$ident(statement) => { statement.codegen(compiler)?; },
                     )*
+                    Statement::Ellipsis => {},
                 }
             };
         }
@@ -47,13 +49,17 @@ impl DisplayNode for Statement {
         macro_rules! inner {
             ($($ident:ident)*) => {
                 match self {
+                    $(
+                        Statement::$ident(statement) => { statement.display(f, indent)?; },
+                    )*
                     Statement::Expression(expression) => {
                         display::indent(f, indent)?;
                         expression.display(f, indent)?;
                     },
-                    $(
-                        Statement::$ident(statement) => { statement.display(f, indent)?; },
-                    )*
+                    Statement::Ellipsis => {
+                        display::indent(f, indent)?;
+                        writeln!(f, "...")?;
+                    }
                 }
             };
         }
@@ -212,6 +218,8 @@ impl StatementCodegen for FunctionDefinition {
 
         if return_type != CodegenType::Void && compiler.current_return.is_none() {
             return Err(CompileError::expected("return", self.span));
+        } else {
+            compiler.current_return = None;
         }
 
         if return_type == CodegenType::Void {
