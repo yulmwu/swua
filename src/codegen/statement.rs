@@ -20,7 +20,6 @@ pub enum Statement {
     Type(TypeDeclaration),
     While(While),
     For(For),
-    Foreach(Foreach),
 }
 
 impl StatementCodegen for Statement {
@@ -36,7 +35,7 @@ impl StatementCodegen for Statement {
         }
 
         inner! {
-            Expression Let Function ExternalFunction Struct Return If Type While For Foreach
+            Expression Let Function ExternalFunction Struct Return If Type While For
         }
 
         Ok(())
@@ -60,7 +59,7 @@ impl DisplayNode for Statement {
         }
 
         inner! {
-            Let Function ExternalFunction Struct Return If Type While For Foreach
+            Let Function ExternalFunction Struct Return If Type While For
         }
 
         writeln!(f)
@@ -688,31 +687,6 @@ impl DisplayNode for For {
         self.condition.display(f, indent)?;
         write!(f, "; ")?;
         self.increment.display(f, indent)?;
-        self.body.display(f, indent)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Foreach {
-    pub name: Identifier,
-    pub array: Expression,
-    pub body: Block,
-    pub span: Span,
-}
-
-impl StatementCodegen for Foreach {
-    fn codegen(&self, _: &mut Compiler) -> CompileResult<()> {
-        todo!()
-    }
-}
-
-impl DisplayNode for Foreach {
-    fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
-        display::indent(f, indent)?;
-        write!(f, "foreach ")?;
-        self.name.display(f, indent)?;
-        write!(f, " <- ")?;
-        self.array.display(f, indent)?;
         self.body.display(f, indent)
     }
 }
