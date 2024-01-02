@@ -899,17 +899,50 @@ pub struct TernaryExpression {
     pub span: Span,
 }
 
+/*
+true ? 1 : 2
+
+=
+
+if true {
+    return 1
+} else {
+    return 2
+}
+*/
 impl ExpressionCodegen for TernaryExpression {
     fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
         let condition = self.condition.codegen(compiler)?;
+        if condition.ty != CodegenType::Boolean {
+            return Err(CompileError::expected("boolean", self.span));
+        }
 
-        let condition = match condition.ty {
-            CodegenType::Boolean => condition.llvm_value.into_int_value(),
-            _ => return Err(CompileError::expected("boolean", self.span)),
-        };
+        let function = compiler.current_function.clone().unwrap().function;
 
+        let then_block = compiler.context.append_basic_block(function, "then");
+        let else_block = compiler.context.append_basic_block(function, "else");
+        let merge_block = compiler.context.append_basic_block(function, "merge");
+
+        compiler.builder.build_conditional_branch(
+            condition.llvm_value.into_int_value(),
+            then_block,
+            else_block,
+        );
+
+        compiler.builder.position_at_end(then_block);
         let consequence = self.consequence.codegen(compiler)?;
+        compiler.builder.build_unconditional_branch(merge_block);
+
+        let then_block = compiler.builder.get_insert_block().unwrap();
+
+        compiler.builder.position_at_end(else_block);
+
         let alternative = self.alternative.codegen(compiler)?;
+        compiler.builder.build_unconditional_branch(merge_block);
+
+        let else_block = compiler.builder.get_insert_block().unwrap();
+
+        compiler.builder.position_at_end(merge_block);
 
         if consequence.ty != alternative.ty {
             return Err(CompileError::type_mismatch(
@@ -919,14 +952,15 @@ impl ExpressionCodegen for TernaryExpression {
             ));
         }
 
-        let result = compiler.builder.build_select(
-            condition,
-            consequence.llvm_value,
-            alternative.llvm_value,
-            "ternary",
-        );
+        let phi = compiler
+            .builder
+            .build_phi(consequence.ty.to_llvm_type(compiler.context), "phi");
+        phi.add_incoming(&[
+            (&consequence.llvm_value, then_block),
+            (&alternative.llvm_value, else_block),
+        ]);
 
-        Ok(Value::new(result, consequence.ty))
+        Ok(Value::new(phi.as_basic_value(), consequence.ty))
     }
 }
 
