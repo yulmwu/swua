@@ -1,6 +1,6 @@
-extern print_str(str) -> int
+extern print_str as print(str) -> int
 extern concat_str(str, str) -> str
 
 define main -> int =
-    print_str(concat_str("Hello, ", "World!"))
+    print(concat_str("Hello, ", "World!"))
     return 0
