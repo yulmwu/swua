@@ -464,7 +464,7 @@ impl ExpressionCodegen for CallExpression {
                         ))
                     }
                 };
-                let value = match compiler.module.get_function(&identifier.identifier) {
+                let value = match compiler.module.get_function(&function.name) {
                     Some(value) => value,
                     None => {
                         return Err(CompileError::function_not_found(

@@ -186,6 +186,7 @@ impl StatementCodegen for FunctionDefinition {
 
         compiler.symbol_table.insert_function(
             self.name.identifier.clone(),
+            self.name.identifier.clone(),
             function_type,
             FunctionType {
                 name: self.name.identifier.clone(),
@@ -258,6 +259,7 @@ impl DisplayNode for FunctionDefinition {
 
 #[derive(Debug, Clone)]
 pub struct ExternalFunctionDeclaration {
+    pub alias: Option<Identifier>,
     pub name: Identifier,
     pub parameters: Vec<AstType>,
     pub return_type: AstType,
@@ -298,7 +300,11 @@ impl StatementCodegen for ExternalFunctionDeclaration {
         }
 
         compiler.symbol_table.insert_function(
-            self.name.identifier.clone(),
+            self.alias
+                .clone()
+                .unwrap_or_else(|| self.name.clone())
+                .identifier,
+            self.name.identifier.clone(), // TODO: alias
             function_type,
             FunctionType {
                 name: self.name.identifier.clone(),

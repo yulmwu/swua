@@ -24,6 +24,7 @@ pub struct VariableEntry<'a> {
 
 #[derive(Debug, Clone)]
 pub struct FunctionEntry<'a> {
+    pub name: String,
     pub ty: types::FunctionType<'a>,
     pub function_type: FunctionType,
 }
@@ -76,20 +77,26 @@ impl<'a> SymbolTable<'a> {
 
     pub fn insert_function(
         &mut self,
+        alias: String,
         name: String,
         ty: types::FunctionType<'a>,
         function_type: FunctionType,
     ) -> CompileResult<()> {
         if self.entries.functions.contains_key(&name) {
             return Err(CompileError::function_already_declared(
-                name,
+                alias,
                 function_type.span,
             ));
         }
 
-        self.entries
-            .functions
-            .insert(name, FunctionEntry { ty, function_type });
+        self.entries.functions.insert(
+            alias,
+            FunctionEntry {
+                name,
+                ty,
+                function_type,
+            },
+        );
         Ok(())
     }
 
@@ -138,11 +145,11 @@ impl<'a> SymbolTable<'a> {
         }
     }
 
-    pub fn get_function(&self, name: &str) -> Option<FunctionEntry<'a>> {
-        match self.entries.functions.get(name) {
+    pub fn get_function(&self, alias: &str) -> Option<FunctionEntry<'a>> {
+        match self.entries.functions.get(alias) {
             Some(entry) => Some(entry.clone()),
             None => match self.parent {
-                Some(ref parent) => parent.get_function(name),
+                Some(ref parent) => parent.get_function(alias),
                 None => None,
             },
         }
