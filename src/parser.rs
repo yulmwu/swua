@@ -229,6 +229,7 @@ where
     }
 
     fn parse_let_statement(&mut self) -> ParseResult<LetStatement> {
+        let position = self.span.start;
         self.next_token();
 
         let identifier = identifier! { self };
@@ -258,7 +259,7 @@ where
             name: identifier,
             ty,
             value,
-            span: self.span,
+            span: Span::new(position, self.span.end),
         })
     }
 
@@ -379,6 +380,7 @@ where
     }
 
     fn parse_external_function_declaration(&mut self) -> ParseResult<ExternalFunctionDeclaration> {
+        let position = self.span.start;
         self.next_token();
 
         let identifier = identifier! { self };
@@ -427,11 +429,12 @@ where
             name: identifier,
             parameters,
             return_type,
-            span: self.span,
+            span: Span::new(position, self.span.end),
         })
     }
 
     fn parse_return_statement(&mut self) -> ParseResult<ReturnStatement> {
+        let position = self.span.start;
         self.next_token();
 
         let expression = self.parse_expression(Priority::Lowest)?;
@@ -441,7 +444,7 @@ where
 
         Ok(ReturnStatement {
             value: expression,
-            span: self.span,
+            span: Span::new(position, self.span.end),
         })
     }
 
