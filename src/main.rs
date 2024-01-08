@@ -93,6 +93,8 @@ pub enum SubCommand {
         llvm_ir: bool,
         #[clap(short, long, help = "Create ASM file")]
         asm: bool,
+        #[clap(short = 'L', long, help = "Link libraries")]
+        link: Option<Vec<String>>,
     },
 }
 
@@ -216,6 +218,7 @@ fn main() {
             input,
             llvm_ir,
             asm,
+            link,
         } => {
             if !cli.no_verbose {
                 println!(
@@ -300,22 +303,29 @@ fn main() {
                     exit(1);
                 });
 
-            let command = Command::new("clang")
+            let mut command = Command::new("clang");
+            command
                 .arg("-o")
                 .arg(output.clone())
                 .arg(output.with_extension("o"))
                 .arg("-L")
                 .arg(output.parent().unwrap())
                 .arg("-l")
-                .arg("swua")
-                .output()
-                .unwrap_or_else(|err| {
-                    eprintln!(
-                        "{}",
-                        format!("Error: Failed to execute clang: {}", err).red()
-                    );
-                    exit(1);
-                });
+                .arg("swua");
+
+            if let Some(link) = link {
+                for lib in link {
+                    command.arg("-l").arg(lib);
+                }
+            }
+
+            let command = command.output().unwrap_or_else(|err| {
+                eprintln!(
+                    "{}",
+                    format!("Error: Failed to execute clang: {}", err).red()
+                );
+                exit(1);
+            });
 
             let exit_code = command.status.code().unwrap_or_else(|| {
                 eprintln!("{}", "Error: clang terminated by signal".red());
