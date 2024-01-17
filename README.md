@@ -12,7 +12,7 @@
 
 -   [Overview](#overview)
 -   [Usage](#usage)
--   [Syntax](#syntax)
+-   [Tutorial](#tutorial)
 -   [Standard Library](#standard-library)
 -   [Features and TODO](#features-and-todo)
 
@@ -39,7 +39,7 @@ graph LR
 
 ## Build from source
 
-# Syntax
+# Tutorial
 
 # Standard Library
 
