@@ -70,8 +70,6 @@ pub struct Cli {
     pub subcommand: SubCommand,
     #[clap(short, long, help = "Optimization level (0-3, default: 0)")]
     pub optimization_level: Option<u8>,
-    #[clap(long, help = "Build output directory (default: ./build)")]
-    pub output_dir: Option<PathBuf>,
     #[clap(short, long, help = "Binary name (default: main)")]
     pub name: Option<String>,
     #[clap(long, help = "Don't print verbose information")]
@@ -89,6 +87,8 @@ pub enum SubCommand {
     Build {
         #[clap(short, long)]
         input: PathBuf,
+        #[clap(short, long, help = "Build output directory (default: ./build)")]
+        output_dir: Option<PathBuf>,
         #[clap(short, long, help = "Create LLVM IR file")]
         llvm_ir: bool,
         #[clap(short, long, help = "Create ASM file")]
@@ -143,7 +143,6 @@ fn main() {
         }
     };
     let name = cli.name.unwrap_or_else(|| "main".to_string());
-    let output_dir = cli.output_dir.unwrap_or_else(|| PathBuf::from("./build"));
 
     let triple = guess_host_triple().unwrap_or_else(|| {
         eprintln!("{}", "Error: Unknown target triple".red().bold());
@@ -216,6 +215,7 @@ fn main() {
         }
         SubCommand::Build {
             input,
+            output_dir,
             llvm_ir,
             asm,
             link,
@@ -241,7 +241,9 @@ fn main() {
                     exit(1);
                 }
             };
-            let output = output_dir.join(name);
+            let output = output_dir
+                .unwrap_or_else(|| PathBuf::from("./build"))
+                .join(&name);
 
             if llvm_ir {
                 write_file(
