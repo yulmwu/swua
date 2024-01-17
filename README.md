@@ -4,7 +4,7 @@
 
 ### Small, insignificant programming language using LLVM as backend. 😃
 
-**English** | [한국어](./README.ko-KR.md) | [Eaxmples](./examples) | [License](./LICENSE)
+**English** | [한국어](./README.ko-KR.md) | [Examples](./examples) | [License](./LICENSE)
 
 </div>
 
