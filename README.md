@@ -1,4 +1,4 @@
-<center>
+<div align="center">
 
 # Swua Programming Language
 
@@ -6,7 +6,7 @@
 
 **English** | [한국어](./README.ko-KR.md) | [Eaxmples](./examples) | [License](./LICENSE)
 
-</center>
+</div>
 
 # Table of Contents
 

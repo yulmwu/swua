@@ -1,4 +1,4 @@
-<center>
+<div align="center">
 
 # Swua 프로그래밍 언어
 
@@ -6,7 +6,7 @@
 
 [English](./README.md) | **한국어** | [예제](./examples) | [라이선스](./LICENSE)
 
-</center>
+</div>
 
 # 목차
 
