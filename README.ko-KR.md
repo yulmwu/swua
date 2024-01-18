@@ -18,7 +18,7 @@
 
 # 개요
 
-Swua 프로그래밍 언어는 LLVM을 백엔드로 사용하는 쉽고 간단한 프로그래밍 언어입니다.
+Swua[^1] 프로그래밍 언어는 LLVM을 백엔드로 사용하는 쉽고 간단한 프로그래밍 언어입니다.
 [MIT 라이선스](./LICENSE)를 따릅니다.
 
 Swua 프로그래밍 언어는 아직 완성된 프로그래밍 언어가 아닙니다! 아직 개발 중이며, 구현되지 않은 기능이나 버그가 있을 수 있습니다.
@@ -120,7 +120,7 @@ $ ./build/main[.exe]
 > [!NOTE]
 >
 > 아래의 예제부턴 이해를 돕기 위해 `define main -> int =`는 기본적으로 생략하며, 실제 코드에선 생략하지 않습니다.
-> 
+>
 > 또한 확장명은 `.swua`로 통일합니다.
 
 ## 들여쓰기
@@ -179,6 +179,9 @@ let boolean1 = true
 let boolean2 = false
 ```
 
+-   `int` 자료형의 경우, 64비트 정수를 지원하며, `-2^63`부터 `2^63 - 1`까지의 값을 가질 수 있습니다.
+-   `float` 자료형은 64비트 부동소수점을 지원합니다.
+
 ## 복합 자료형(Compound Types)
 
 Swua 프로그래밍 언어는 배열과 구조체를 지원합니다.
@@ -191,6 +194,30 @@ Swua 프로그래밍 언어는 배열과 구조체를 지원합니다.
 let arr1 = [1, 2, 3] // int[3]
 let arr2: int[3] = [1, 2, 3] // int[3]
 ```
+
+배열의 크기는 `sizeof` 연산자를 통해 구할 수 있습니다.
+
+```rust
+let arr = [1, 2, 3]
+let size = sizeof arr // 8 (int의 크기) * 3 (요소) = 24
+```
+
+따라서 배열의 길이를 구해야 한다면, 타입의 크기로 나누어야 합니다.
+
+```rust
+let arr = [1, 2, 3]
+let len = (sizeof arr) / sizeof 0
+```
+
+> [!WARNING]
+>
+> 파라미터에 배열을 넘길 땐 배열의 길이를 명시해줘야 합니다. 이는 추후에 수정될 예정입니다.
+>
+> ```rust
+> define len(arr int[]) -> int =
+>                 // ^ Error: unknown size
+>    return (sizeof arr) / sizeof 0
+> ```
 
 ### 구조체
 
@@ -213,10 +240,11 @@ let person = Person {
 }
 ```
 
-구조체의 필드는 `.`을 사용하여 접근할 수 있습니다.
+구조체의 필드는 `.`을 사용하여 접근할 수 있으며, `.`로 접근하여 값을 변경할 수 있습니다.
 
 ```rust
 let name = person.name
+person.age = 21
 ```
 
 ## 변수
@@ -228,9 +256,18 @@ let a = 1
 let a = 2 // Error: variable `a` is already declared
 ```
 
+변수의 값은 `=`을 사용하여 변경할 수 있으며, 타입이 다른 값으로 변경할 수 없습니다.
+
+```rust
+let a = 1
+
+a = 2 // OK
+a = 3.14 // Error: expected `int`, but found `float`
+```
+
 ### 타입 어노테이션
 
-변수의 타입을 명시할 수 있습니다. 타입 어노테이션은 `:`을 사용합니다.
+변수의 타입을 명시할 수 있습니다. 타입 어노테이션은 `:`을 사용하여 명시할 수 있습니다.
 
 ```rust
 let a: int = 0
@@ -244,8 +281,6 @@ let a: int = 0
 
 ```rust
 define add(a int, b int) -> int =
-    let a = 1
-    let b = 2
     return a + b
 ```
 
@@ -258,16 +293,34 @@ define hello -> str =
     return "Hello, World!"
 ```
 
+또한, 함수에 `return`문 밖에 없다면, 아래와 같이 한줄로 표현할 수 있습니다.
+
+```rust
+define add(a int, b int) -> int = a + b
+```
+
+이 경우 파싱 과정에서 `return` 문으로 변환됩니다.
+
+### 함수의 호출
+
+함수의 호출은 `<함수의 식별자>(<인자>, ..)` 형태로 호출합니다.
+
+```rust
+let a = add(1, 2)
+```
+
 ## 외부 함수
 
-외부 함수는 `extern` 키워드를 사용하여 선언할 수 있습니다. `as` 키워드를 통하여 외부 함수의 이름을 지정할 수 있습니다.
-표준 라이브러리의 함수들은 외부 함수로 선언하여 사용합니다.
+외부 함수는 `extern` 키워드를 사용하여 선언할 수 있습니다. `as` 키워드를 통하여 외부 함수의 식별자를 지정할 수 있습니다.
+함수의 파라미터는 식별자를 생략하고 타입만 명시할 수 있습니다.
 
 ```rust
 extern print_str as print(str) -> int
 ```
 
-빌드 시 `-L` 옵션을 사용하여 외부 라이브러리를 링크할 수 있습니다.
+표준 라이브러리의 함수들은 외부 함수로 선언하여 사용합니다.
+
+빌드 시 `-L` 옵션을 사용하여 외부 라이브러리를 링크할 수 있습니다. 표준 라이브러리는 자동으로 링크되므로, 따로 링크할 필요는 없습니다.
 
 ## if 문, 삼항 연산자
 
@@ -282,6 +335,7 @@ else
     print("a is not 1 or 2")
 ```
 
+`if`문은 구문(statement)이므로, 값을 반환하지 않습니다. 만약 값을 반환하고 싶다면, 아래와 같이 삼항 연산자를 사용해야 합니다.
 삼항 연산자는 아래와 같이 사용할 수 있습니다.
 
 ```rust
@@ -308,10 +362,131 @@ while a < 10
 type T = int
 ```
 
-.. TODO
+## 타입 캐스팅
 
+어떠한 값을 다른 타입으로 캐스팅할 수 있습니다. 이때 캐스팅은 `as` 키워드를 사용합니다.
+
+```rust
+let a = 1 as float // 1.0
+let b = 3.14 as int // 3
+let c = true as int // 1
+```
+
+## typeof 연산자
+
+`typeof` 연산자는 피연산자의 타입을 반환합니다.
+
+| 피연산자 | 반환값 |
+| -------- | ------ |
+| `int`    | 0      |
+| `float`  | 1      |
+| `str`    | 2      |
+| `bool`   | 3      |
+| `T[]`    | 4      |
+| `struct` | 5      |
+| `fn`     | 6      |
+| `void`   | 7      |
+| `T*`     | 8      |
+
+```rust
+let a = typeof 3.14 // 1
+```
+
+## 포인터와 참조, 역참조
+
+포인터는 `*`를 사용하여 선언합니다. 포인터는 `&`를 사용하여 참조할 수 있습니다.
+
+```rust
+let a = 1
+let ptr: int* = &a
+```
+
+선언된 포인터는 `*`를 사용하여 역참조할 수 있습니다.
+
+```rust
+*ptr = 2
+print(a) // 2
+```
+
+포인터를 `int` 타입으로 캐스팅할 수 있으며, 이를 다시 `int*` 타입으로 캐스팅할 수 있습니다.
+
+```rust
+let a = 1
+let ptr = &a
+
+let b = ptr as int // a의 메모리 주소
+let b_ptr = b as int* // a의 메모리 주소를 가리키는 포인터
+print(b) // 6101906008 (이 값은 실행할 때마다 달라질 수 있습니다)
+print(*b_ptr) // 1
+```
+
+포인터 또한 함수의 파라미터로 넘길 수 있습니다.
+
+```rust
+define foo(x int*, value int) -> int =
+    *x = value
+    return *x
+
+let a = 1
+let b = foo(&a, 2)
+print(a) // 2
+```
 
 # 표준 라이브러리
+
+> [!WARNING]
+>
+> 표준 라이브러리는 아직 확실하게 개발되지 않았으며, 가까운 시일 내에 변경될 수 있습니다.
+>
+> 표준 라이브러리의 소스코드는 [여기](./swua.rs)에서 확인할 수 있습니다.
+
+## print(int)
+
+`int` 타입의 값을 출력합니다.
+
+```rust
+print(1) // 1
+```
+
+## print_float(float)
+
+`float` 타입의 값을 출력합니다.
+
+```rust
+print_float(3.14) // 3.14
+```
+
+## print_str(str)
+
+`str` 타입의 값을 출력합니다.
+
+```rust
+print_str("Hello, World!") // Hello, World!
+```
+
+## print_array(T[], int)
+
+`T[]` 타입의 값을 출력합니다. 두번째 인자에 배열의 길이를 명시해야 합니다.
+
+```rust
+print_array([1, 2, 3], 3) // [1, 2, 3]
+```
+
+## to_str(int) -> str
+
+`int` 타입의 값을 `str` 타입으로 변환합니다.
+
+```rust
+let a = to_str(1) // "1"
+```
+
+## concat_str(str, str) -> str
+
+두개의 `str` 타입의 값을 이어붙여 `str` 타입으로 반환합니다.
+
+```rust
+let a = concat_str("Hello, ", "World!") // "Hello, World!"
+```
 
 # 기능 및 TODO
 
@@ -331,4 +506,6 @@ type T = int
 -   [ ] More examples
 -   [ ] More tests
 
-이름인 Swua에 대해 딱히 사연이 있거나 하진 않습니다. 그냥 떠오른 이름들 후보 중 하나였는데, 그냥 썼습니다.
+---
+
+[^1]: 이름인 Swua에 대해 딱히 사연이 있거나 하진 않습니다. 그냥 떠오른 이름들 후보 중 하나였는데, 그냥 썼습니다.
