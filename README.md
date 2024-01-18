@@ -2,7 +2,7 @@
 
 # Swua Programming Language
 
-### Small, insignificant programming language using LLVM as backend. 😃
+### Small, insignificant programming language 😃
 
 **English** | [한국어](./README.ko-KR.md) | [Examples](./examples) | [License](./LICENSE)
 
