@@ -19,6 +19,8 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompileError {
     pub kind: CompileErrorKind,
+    pub help: Option<String>,
+    pub note: Option<String>,
     pub span: Span,
 }
 
@@ -46,11 +48,21 @@ macro_rules! impl_error_kind {
 
         impl CompileError {
             pub fn new(kind: CompileErrorKind, span: Span) -> Self {
-                Self { kind, span }
+                Self { kind, span, help: None, note: None}
             }
 
             pub fn parsing_error(kind: ParsingErrorKind, span: Span) -> Self {
                 Self::new(CompileErrorKind::ParsingError(kind), span)
+            }
+
+            pub fn set_help(mut self, help: String) -> Self {
+                self.help = Some(help);
+                self
+            }
+
+            pub fn set_note(mut self, note: String) -> Self {
+                self.note = Some(note);
+                self
             }
 
             $(
@@ -91,7 +103,6 @@ impl_error_kind! {
     FunctionNotFound(name: String): function_not_found<T: ToString>(T) => "function `{name}` not found",
     TypeNotFound(name: String): type_not_found<T: ToString>(T) => "type `{name}` not found",
     UnknownSize: unknown_size => "unknown size",
-    WrongNumberOfArguments(expected: String, found: String): wrong_number_of_arguments(usize, usize) => "wrong number of arguments: expected `{expected}`, found `{found}`",
     WrongNumberOfFields(expected: String, found: String): wrong_number_of_fields(usize, usize) => "wrong number of fields: expected `{expected}`, found `{found}`",
     CallNonFunctionType: call_non_function_type => "call non-function type",
     MemberAccessNonStructType: member_access_non_struct_type => "member access non-struct type",

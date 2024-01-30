@@ -488,14 +488,6 @@ impl ExpressionCodegen for CallExpression {
             _ => return Err(CompileError::call_non_function_type(self.span)),
         };
 
-        if self.arguments.len() != entry.function_type.parameters.len() {
-            return Err(CompileError::wrong_number_of_arguments(
-                entry.function_type.parameters.len(),
-                self.arguments.len(),
-                self.span,
-            ));
-        }
-
         let mut arguments: Vec<BasicMetadataValueEnum> = Vec::new();
 
         for argument in self.arguments.clone() {
