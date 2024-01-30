@@ -2,6 +2,7 @@ pub mod codegen;
 pub mod lexer;
 pub mod parser;
 pub mod preprocessor;
+pub mod utils;
 
 use codegen::{
     symbol_table::SymbolTable,
@@ -54,7 +55,7 @@ impl<'a> Value<'a> {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, Eq, PartialOrd, Ord)]
 pub struct Position {
     pub line: usize,
     pub column: usize,
@@ -78,7 +79,7 @@ impl fmt::Display for Position {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialOrd, Ord)]
 pub struct Span {
     pub start: Position,
     pub end: Position,
