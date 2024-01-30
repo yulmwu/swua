@@ -304,11 +304,11 @@ impl StatementCodegen for ExternalFunctionDeclaration {
                 .clone()
                 .unwrap_or_else(|| self.name.clone())
                 .identifier,
-            self.name.identifier.clone(), // TODO: alias
+            self.name.identifier.clone(),
             function_type,
             FunctionType {
                 name: self.name.identifier.clone(),
-                parameters: parameters_codegen_type.clone(),
+                parameters: parameters_codegen_type,
                 return_type: Box::new(return_type),
                 span: self.span,
             },

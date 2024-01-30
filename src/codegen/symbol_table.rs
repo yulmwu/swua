@@ -3,15 +3,18 @@ use crate::{
         types::{CodegenType, FunctionType, StructType},
         CompileError, CompileResult,
     },
+    utils::btreemap2::BTreeMap2,
     Span,
 };
 use inkwell::{types, values::PointerValue};
 use std::collections::BTreeMap;
 
+use super::types::FunctionParameterType;
+
 #[derive(Debug, Clone, Default)]
 pub struct SymbolEntries<'a> {
     pub variables: BTreeMap<String, VariableEntry<'a>>,
-    pub functions: BTreeMap<String, FunctionEntry<'a>>,
+    pub functions: BTreeMap2<String, FunctionParameterType, FunctionEntry<'a>>,
     pub structs: BTreeMap<String, StructEntry<'a>>,
     pub type_aliases: BTreeMap<String, TypeAliasEntry>,
 }
@@ -82,21 +85,25 @@ impl<'a> SymbolTable<'a> {
         ty: types::FunctionType<'a>,
         function_type: FunctionType,
     ) -> CompileResult<()> {
-        if self.entries.functions.contains_key(&name) {
+        if self
+            .entries
+            .functions
+            .insert(
+                alias.clone(),
+                function_type.parameters.clone(),
+                FunctionEntry {
+                    name,
+                    ty,
+                    function_type: function_type.clone(),
+                },
+            )
+            .is_none()
+        {
             return Err(CompileError::function_already_declared(
                 alias,
                 function_type.span,
             ));
         }
-
-        self.entries.functions.insert(
-            alias,
-            FunctionEntry {
-                name,
-                ty,
-                function_type,
-            },
-        );
         Ok(())
     }
 
@@ -145,11 +152,15 @@ impl<'a> SymbolTable<'a> {
         }
     }
 
-    pub fn get_function(&self, alias: &str) -> Option<FunctionEntry<'a>> {
-        match self.entries.functions.get(alias) {
+    pub fn get_function(
+        &self,
+        alias: &str,
+        parameters: &FunctionParameterType,
+    ) -> Option<FunctionEntry<'a>> {
+        match self.entries.functions.get(alias, parameters) {
             Some(entry) => Some(entry.clone()),
             None => match self.parent {
-                Some(ref parent) => parent.get_function(alias),
+                Some(ref parent) => parent.get_function(alias, parameters),
                 None => None,
             },
         }

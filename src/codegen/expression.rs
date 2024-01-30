@@ -455,7 +455,16 @@ impl ExpressionCodegen for CallExpression {
     fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
         let (function, entry) = match *self.function.clone() {
             Expression::Literal(Literal::Identifier(identifier)) => {
-                let function = match compiler.symbol_table.get_function(&identifier.identifier) {
+                let parameter_types = self
+                    .arguments
+                    .iter()
+                    .map(|argument| argument.codegen(compiler).map(|value| value.ty))
+                    .collect::<CompileResult<Vec<CodegenType>>>()?;
+
+                let function = match compiler
+                    .symbol_table
+                    .get_function(&identifier.identifier, &parameter_types)
+                {
                     Some(entry) => entry,
                     None => {
                         return Err(CompileError::function_not_found(

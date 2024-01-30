@@ -99,7 +99,7 @@ impl fmt::Display for AstTypeKind {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CodegenType {
     Int,
     Float,
@@ -112,7 +112,7 @@ pub enum CodegenType {
     Pointer(Box<CodegenType>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialOrd, Ord)]
 pub struct ArrayType {
     pub ty: Box<CodegenType>,
     pub len: Option<usize>,
@@ -125,20 +125,22 @@ impl PartialEq for ArrayType {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
 pub struct StructType {
     pub name: String,
     pub fields: BTreeMap<String, (usize, CodegenType)>,
     pub span: Span,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
 pub struct FunctionType {
     pub name: String,
-    pub parameters: Vec<CodegenType>,
+    pub parameters: FunctionParameterType,
     pub return_type: Box<CodegenType>,
     pub span: Span,
 }
+
+pub type FunctionParameterType = Vec<CodegenType>;
 
 impl CodegenType {
     pub fn to_llvm_type<'a>(&self, context: &'a Context) -> BasicTypeEnum<'a> {
