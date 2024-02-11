@@ -40,7 +40,13 @@ fn compile<'a>(
     program.codegen(context, SymbolTable::default(), triple, name)
 }
 
-fn compile_error(error: CompileError, name: &str, filename: &str, file_content: String) {
+fn compile_error(
+    error: CompileError,
+    name: &str,
+    filename: &str,
+    file_content: String,
+    _debug: bool,
+) {
     println!("{}:", "Compilation failed due to".red().bold());
 
     let lines: Vec<&str> = file_content.split('\n').collect();
@@ -55,6 +61,14 @@ fn compile_error(error: CompileError, name: &str, filename: &str, file_content: 
         " ".repeat(error.span.start.column - 1),
         format!("^ Error: {}", error.kind).red().underline()
     );
+
+    if let Some(help) = error.help {
+        println!(
+            "{} {}: {help}",
+            format!(" {} -", " ".repeat(spacing)).blue(),
+            "help".green()
+        );
+    }
 
     println!(
         " {} {filename}:{} ({name})",
@@ -74,6 +88,8 @@ pub struct Cli {
     pub name: Option<String>,
     #[clap(long, help = "Don't print verbose information")]
     pub no_verbose: bool,
+    #[clap(long, help = "Debug mode")]
+    pub debug: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -168,7 +184,7 @@ fn main() {
             let module = match compile(&context, source_code.clone(), &target_triple, &name) {
                 Ok(module) => module,
                 Err(err) => {
-                    compile_error(err, &name, input.to_str().unwrap(), source_code);
+                    compile_error(err, &name, input.to_str().unwrap(), source_code, cli.debug);
                     exit(1);
                 }
             };
@@ -237,7 +253,7 @@ fn main() {
             let module = match compile(&context, source_code.clone(), &target_triple, &name) {
                 Ok(module) => module,
                 Err(err) => {
-                    compile_error(err, &name, input.to_str().unwrap(), source_code);
+                    compile_error(err, &name, input.to_str().unwrap(), source_code, cli.debug);
                     exit(1);
                 }
             };
