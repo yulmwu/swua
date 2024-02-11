@@ -98,11 +98,11 @@ Options:
 `hello_world.swua`라는 이름의 파일을 생성하고, 아래의 코드를 입력해봅시다.
 
 ```rust
-extern print_str as print(str) -> int
+extern print_str(str) -> int
 extern concat_str(str, str) -> str
 
 define main -> int =
-    print(concat_str("Hello, ", "World!"))
+    print_str(concat_str("Hello, ", "World!"))
     return 0
 ```
 
@@ -301,6 +301,20 @@ define add(a int, b int) -> int = a + b
 
 이 경우 파싱 과정에서 `return` 문으로 변환됩니다.
 
+하나의 식별자로 여러 함수를 선언할 수 있습니다. (오버로딩)
+
+```rust
+define foo(a int) -> int = a * 2
+define foo(a int, b int) -> int = a + b
+
+print(foo(5)) // 10
+print(foo(5, 3)) // 8
+```
+
+> [!WARNING]
+> 
+> 함수 오버로딩은 아직 실험적인 기능이며, 추후에 수정될 수 있습니다.
+
 ### 함수의 호출
 
 함수의 호출은 `<함수의 식별자>(<인자>, ..)` 형태로 호출합니다.
@@ -311,12 +325,16 @@ let a = add(1, 2)
 
 ## 외부 함수
 
-외부 함수는 `extern` 키워드를 사용하여 선언할 수 있습니다. `as` 키워드를 통하여 외부 함수의 식별자를 지정할 수 있습니다.
+외부 함수는 `extern` 키워드를 사용하여 선언할 수 있습니다. ~~`as` 키워드를 통하여 외부 함수의 식별자를 지정할 수 있습니다.~~
 함수의 파라미터는 식별자를 생략하고 타입만 명시할 수 있습니다.
 
 ```rust
-extern print_str as print(str) -> int
+extern print_str(str) -> int
 ```
+
+> [!WARNING]
+> 
+> `as` 키워드는 삭제 예정입니다. 이는 추후에 수정될 예정입니다.
 
 표준 라이브러리의 함수들은 외부 함수로 선언하여 사용합니다.
 
