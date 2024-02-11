@@ -2,8 +2,8 @@ use super::{
     symbol_table::SymbolTable, types::AstType, CompileError, CompileResult, Expression, Identifier,
 };
 use crate::{
-    display, CodegenType, Compiler, CurrentFunction, DisplayNode, ExpressionCodegen, FunctionType,
-    Span, StatementCodegen, StructType,
+    display, utils::hash, CodegenType, Compiler, CurrentFunction, DisplayNode, ExpressionCodegen,
+    FunctionType, Span, StatementCodegen, StructType,
 };
 use inkwell::{types::BasicType, IntPredicate};
 use std::{collections::BTreeMap, fmt};
@@ -163,10 +163,35 @@ impl StatementCodegen for FunctionDefinition {
             .to_llvm_type(compiler.context)
             .fn_type(parameters.as_slice(), false);
 
+        let mut parameters_codegen_type = Vec::new();
+
+        for parameter in self.parameters.clone() {
+            parameters_codegen_type
+                .push(parameter.ty.kind.to_codegen_type(&compiler.symbol_table)?);
+        }
+
+        let codegen_function_type = FunctionType {
+            name: self.name.identifier.clone(),
+            parameters: parameters_codegen_type.clone().into(),
+            return_type: Box::new(return_type.clone()),
+            span: self.span,
+        };
+
+        let llvm_function_name = if self.name.identifier == "main" {
+            // TODO
+            "main".to_string()
+        } else {
+            format!(
+                "{}_{:x}",
+                self.name.identifier,
+                hash(&codegen_function_type)
+            )
+        };
+
         let function =
             compiler
                 .module
-                .add_function(self.name.identifier.as_str(), function_type, None);
+                .add_function(llvm_function_name.as_str(), function_type, None);
 
         compiler.current_function = Some(CurrentFunction {
             function,
@@ -177,23 +202,11 @@ impl StatementCodegen for FunctionDefinition {
 
         compiler.builder.position_at_end(basic_block);
 
-        let mut parameters_codegen_type = Vec::new();
-
-        for parameter in self.parameters.clone() {
-            parameters_codegen_type
-                .push(parameter.ty.kind.to_codegen_type(&compiler.symbol_table)?);
-        }
-
         compiler.symbol_table.insert_function(
             self.name.identifier.clone(),
             self.name.identifier.clone(),
             function_type,
-            FunctionType {
-                name: self.name.identifier.clone(),
-                parameters: parameters_codegen_type.clone(),
-                return_type: Box::new(return_type.clone()),
-                span: self.span,
-            },
+            codegen_function_type,
         )?;
 
         let original_symbol_table = compiler.symbol_table.clone();
@@ -289,15 +302,28 @@ impl StatementCodegen for ExternalFunctionDeclaration {
             .to_llvm_type(compiler.context)
             .fn_type(parameters.as_slice(), false);
 
-        compiler
-            .module
-            .add_function(self.name.identifier.as_str(), function_type, None);
-
         let mut parameters_codegen_type = Vec::new();
 
         for parameter in self.parameters.clone() {
             parameters_codegen_type.push(parameter.kind.to_codegen_type(&compiler.symbol_table)?);
         }
+
+        let codegen_function_type = FunctionType {
+            name: self.name.identifier.clone(),
+            parameters: parameters_codegen_type.into(),
+            return_type: Box::new(return_type),
+            span: self.span,
+        };
+
+        compiler.module.add_function(
+            &format!(
+                "{}_{:x}",
+                self.name.identifier,
+                hash(&codegen_function_type)
+            ),
+            function_type,
+            None,
+        );
 
         compiler.symbol_table.insert_function(
             self.alias
@@ -306,12 +332,7 @@ impl StatementCodegen for ExternalFunctionDeclaration {
                 .identifier,
             self.name.identifier.clone(),
             function_type,
-            FunctionType {
-                name: self.name.identifier.clone(),
-                parameters: parameters_codegen_type,
-                return_type: Box::new(return_type),
-                span: self.span,
-            },
+            codegen_function_type,
         )?;
 
         Ok(())

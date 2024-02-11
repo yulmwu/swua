@@ -8,7 +8,11 @@ use inkwell::{
     values::IntValue,
     AddressSpace,
 };
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::BTreeMap,
+    fmt,
+    hash::{Hash, Hasher},
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct AstType {
@@ -125,11 +129,32 @@ impl PartialEq for ArrayType {
     }
 }
 
+impl Hash for ArrayType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        4.hash(state);
+        self.ty.hash(state);
+        if let Some(len) = self.len {
+            len.hash(state);
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
 pub struct StructType {
     pub name: String,
     pub fields: BTreeMap<String, (usize, CodegenType)>,
     pub span: Span,
+}
+
+impl Hash for StructType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        5.hash(state);
+        self.name.hash(state);
+        for (name, (_, ty)) in &self.fields {
+            name.hash(state);
+            ty.hash(state);
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
@@ -140,7 +165,31 @@ pub struct FunctionType {
     pub span: Span,
 }
 
-pub type FunctionParameterType = Vec<CodegenType>;
+#[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
+pub struct FunctionParameterType(pub Vec<CodegenType>);
+
+impl From<Vec<CodegenType>> for FunctionParameterType {
+    fn from(parameters: Vec<CodegenType>) -> Self {
+        Self(parameters)
+    }
+}
+
+impl Hash for FunctionParameterType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for ty in &self.0 {
+            ty.hash(state);
+        }
+    }
+}
+
+impl Hash for FunctionType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        6.hash(state);
+        self.name.hash(state);
+        self.parameters.hash(state);
+        // self.return_type.hash(state);
+    }
+}
 
 impl CodegenType {
     pub fn to_llvm_type<'a>(&self, context: &'a Context) -> BasicTypeEnum<'a> {
@@ -168,6 +217,7 @@ impl CodegenType {
             CodegenType::Function(function_type) => {
                 let parameters = function_type
                     .parameters
+                    .0
                     .iter()
                     .map(|ty| ty.to_llvm_type(context).into())
                     .collect::<Vec<_>>();
@@ -212,10 +262,40 @@ impl fmt::Display for CodegenType {
             ),
             CodegenType::Struct(struct_type) => write!(f, "struct {}", struct_type.name),
             CodegenType::Function(function_type) => {
-                write!(f, "fn {}", function_type.name)
+                write!(f, "fn {}", function_type.name)?;
+                if !function_type.parameters.0.is_empty() {
+                    write!(f, "(")?;
+                    for (i, ty) in function_type.parameters.0.iter().enumerate() {
+                        write!(f, "{}", ty)?;
+                        if i < function_type.parameters.0.len() - 1 {
+                            write!(f, ", ")?;
+                        }
+                    }
+                    write!(f, ")")?;
+                }
+                write!(f, " -> {}", function_type.return_type)
             }
             CodegenType::Void => write!(f, "void"),
             CodegenType::Pointer(ty) => write!(f, "{}*", ty),
+        }
+    }
+}
+
+impl Hash for CodegenType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            CodegenType::Int => 0.hash(state),
+            CodegenType::Float => 1.hash(state),
+            CodegenType::Boolean => 2.hash(state),
+            CodegenType::String => 3.hash(state),
+            CodegenType::Array(arr) => arr.hash(state),
+            CodegenType::Struct(struct_type) => struct_type.hash(state),
+            CodegenType::Function(function_type) => function_type.hash(state),
+            CodegenType::Void => 7.hash(state),
+            CodegenType::Pointer(ty) => {
+                8.hash(state);
+                ty.hash(state);
+            }
         }
     }
 }

@@ -3,7 +3,7 @@ use crate::{
         types::{CodegenType, FunctionType, StructType},
         CompileError, CompileResult,
     },
-    utils::btreemap2::BTreeMap2,
+    utils::{btreemap2::BTreeMap2, hash},
     Span,
 };
 use inkwell::{types, values::PointerValue};
@@ -14,7 +14,7 @@ use super::types::FunctionParameterType;
 #[derive(Debug, Clone, Default)]
 pub struct SymbolEntries<'a> {
     pub variables: BTreeMap<String, VariableEntry<'a>>,
-    pub functions: BTreeMap2<String, FunctionParameterType, FunctionEntry<'a>>,
+    pub functions: BTreeMap2<String, u64, FunctionEntry<'a>>,
     pub structs: BTreeMap<String, StructEntry<'a>>,
     pub type_aliases: BTreeMap<String, TypeAliasEntry>,
 }
@@ -85,25 +85,25 @@ impl<'a> SymbolTable<'a> {
         ty: types::FunctionType<'a>,
         function_type: FunctionType,
     ) -> CompileResult<()> {
-        if self
-            .entries
-            .functions
-            .insert(
-                alias.clone(),
-                function_type.parameters.clone(),
-                FunctionEntry {
-                    name,
-                    ty,
-                    function_type: function_type.clone(),
-                },
-            )
-            .is_none()
-        {
+        let hash = hash(&function_type);
+
+        if self.entries.functions.contains_key(&alias, &hash) {
             return Err(CompileError::function_already_declared(
                 alias,
                 function_type.span,
             ));
         }
+
+        _ = self.entries.functions.insert(
+            alias.clone(),
+            hash,
+            FunctionEntry {
+                name,
+                ty,
+                function_type: function_type.clone(),
+            },
+        );
+
         Ok(())
     }
 
@@ -155,15 +155,25 @@ impl<'a> SymbolTable<'a> {
     pub fn get_function(
         &self,
         alias: &str,
-        parameters: &FunctionParameterType,
-    ) -> Option<FunctionEntry<'a>> {
-        match self.entries.functions.get(alias, parameters) {
+        parameters: FunctionParameterType,
+    ) -> (Option<FunctionEntry<'a>>, u64) {
+        let function_type = FunctionType {
+            name: alias.to_string(),
+            parameters: parameters.clone(),
+            return_type: Box::new(CodegenType::Void),
+            span: Span::default(),
+        };
+        let hash = hash(&function_type);
+
+        let f = match self.entries.functions.get(alias, &hash) {
             Some(entry) => Some(entry.clone()),
             None => match self.parent {
-                Some(ref parent) => parent.get_function(alias, parameters),
+                Some(ref parent) => return parent.get_function(alias, parameters),
                 None => None,
             },
-        }
+        };
+
+        (f, hash)
     }
 
     pub fn get_struct(&self, name: &str) -> Option<StructEntry<'a>> {

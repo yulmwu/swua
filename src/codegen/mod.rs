@@ -20,7 +20,8 @@ use std::fmt;
 pub struct CompileError {
     pub kind: CompileErrorKind,
     pub help: Option<String>,
-    pub note: Option<String>,
+    // pub note: Option<String>,
+    // pub debug: Option<String>,
     pub span: Span,
 }
 
@@ -48,7 +49,7 @@ macro_rules! impl_error_kind {
 
         impl CompileError {
             pub fn new(kind: CompileErrorKind, span: Span) -> Self {
-                Self { kind, span, help: None, note: None}
+                Self { kind, span, help: None }
             }
 
             pub fn parsing_error(kind: ParsingErrorKind, span: Span) -> Self {
@@ -57,11 +58,6 @@ macro_rules! impl_error_kind {
 
             pub fn set_help(mut self, help: String) -> Self {
                 self.help = Some(help);
-                self
-            }
-
-            pub fn set_note(mut self, note: String) -> Self {
-                self.note = Some(note);
                 self
             }
 

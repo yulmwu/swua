@@ -1,4 +1,7 @@
-use super::{types::AstType, CompileError, CompileResult, Literal};
+use super::{
+    types::{AstType, FunctionParameterType},
+    CompileError, CompileResult, Literal,
+};
 use crate::{
     BinaryOperator, CodegenType, Compiler, DisplayNode, ExpressionCodegen, Span, UnaryOperator,
     Value,
@@ -453,18 +456,25 @@ pub struct CallExpression {
 
 impl ExpressionCodegen for CallExpression {
     fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
-        let (function, entry) = match *self.function.clone() {
+        let (function, entry, arguments) = match *self.function.clone() {
             Expression::Literal(Literal::Identifier(identifier)) => {
-                let parameter_types = self
+                let arguments = self
                     .arguments
                     .iter()
-                    .map(|argument| argument.codegen(compiler).map(|value| value.ty))
-                    .collect::<CompileResult<Vec<CodegenType>>>()?;
+                    .map(|argument| argument.codegen(compiler))
+                    .collect::<CompileResult<Vec<Value>>>()?;
 
-                let function = match compiler
-                    .symbol_table
-                    .get_function(&identifier.identifier, &parameter_types)
-                {
+                let argument_types = arguments
+                    .iter()
+                    .map(|value| value.ty.clone())
+                    .collect::<Vec<_>>();
+
+                let (function, hash) = compiler.symbol_table.get_function(
+                    &identifier.identifier,
+                    FunctionParameterType::from(argument_types.clone()),
+                );
+
+                let function = match function {
                     Some(entry) => entry,
                     None => {
                         return Err(CompileError::function_not_found(
@@ -473,33 +483,35 @@ impl ExpressionCodegen for CallExpression {
                         ))
                     }
                 };
-                let value = match compiler.module.get_function(&function.name) {
+                let value = match compiler
+                    .module
+                    .get_function(&format!("{}_{hash:x}", identifier.identifier))
+                {
                     Some(value) => value,
                     None => {
                         return Err(CompileError::function_not_found(
-                            identifier.identifier,
+                            CodegenType::Function(function.function_type).to_string(),
                             identifier.span,
-                        ))
+                        ));
                     }
                 };
 
-                (value, function)
+                (value, function, arguments)
             }
             _ => return Err(CompileError::call_non_function_type(self.span)),
         };
 
-        let mut arguments: Vec<BasicMetadataValueEnum> = Vec::new();
+        let mut _arguments: Vec<BasicMetadataValueEnum> = Vec::new();
 
-        for argument in self.arguments.clone() {
-            let value = argument.codegen(compiler)?;
-            arguments.push(value.llvm_value.into());
+        for argument in arguments.clone() {
+            _arguments.push(argument.llvm_value.into());
 
-            let paramter_ty = entry.function_type.parameters[arguments.len() - 1].clone();
-            if value.ty != paramter_ty {
+            let paramter_ty = entry.function_type.parameters.0[arguments.len() - 1].clone();
+            if argument.ty != paramter_ty {
                 return Err(CompileError::type_mismatch(
                     paramter_ty,
-                    value.ty,
-                    argument.into(),
+                    argument.ty,
+                    self.span,
                 ));
             }
         }
@@ -507,7 +519,7 @@ impl ExpressionCodegen for CallExpression {
         Ok(
             match compiler
                 .builder
-                .build_call(function, arguments.as_slice(), "call")
+                .build_call(function, _arguments.as_slice(), "call")
                 .try_as_basic_value()
                 .left()
             {
