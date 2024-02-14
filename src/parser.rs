@@ -386,17 +386,6 @@ where
         let identifier = identifier! { self };
         self.next_token();
 
-        let alias = if self.current_token.kind == TokenKind::As {
-            self.next_token();
-
-            let identifier = identifier! { self };
-            self.next_token();
-
-            Some(identifier)
-        } else {
-            None
-        };
-
         let mut parameters = Vec::new();
 
         if self.current_token.kind == TokenKind::LParen {
@@ -437,7 +426,6 @@ where
         self.expect_termination()?;
 
         Ok(ExternalFunctionDeclaration {
-            alias,
             name: identifier,
             parameters,
             return_type,
