@@ -27,7 +27,6 @@ pub struct VariableEntry<'a> {
 
 #[derive(Debug, Clone)]
 pub struct FunctionEntry<'a> {
-    pub name: String,
     pub ty: types::FunctionType<'a>,
     pub function_type: FunctionType,
 }
@@ -80,25 +79,23 @@ impl<'a> SymbolTable<'a> {
 
     pub fn insert_function(
         &mut self,
-        alias: String,
-        name: String,
         ty: types::FunctionType<'a>,
         function_type: FunctionType,
     ) -> CompileResult<()> {
+        let name = function_type.name.clone();
         let hash = hash(&function_type);
 
-        if self.entries.functions.contains_key(&alias, &hash) {
+        if self.entries.functions.contains_key(&name, &hash) {
             return Err(CompileError::function_already_declared(
-                alias,
+                name,
                 function_type.span,
             ));
         }
 
         _ = self.entries.functions.insert(
-            alias.clone(),
+            name,
             hash,
             FunctionEntry {
-                name,
                 ty,
                 function_type: function_type.clone(),
             },

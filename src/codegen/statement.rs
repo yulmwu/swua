@@ -202,12 +202,9 @@ impl StatementCodegen for FunctionDefinition {
 
         compiler.builder.position_at_end(basic_block);
 
-        compiler.symbol_table.insert_function(
-            self.name.identifier.clone(),
-            self.name.identifier.clone(),
-            function_type,
-            codegen_function_type,
-        )?;
+        compiler
+            .symbol_table
+            .insert_function(function_type, codegen_function_type)?;
 
         let original_symbol_table = compiler.symbol_table.clone();
         compiler.symbol_table = SymbolTable::new_with_parent(compiler.symbol_table.clone());
@@ -272,7 +269,6 @@ impl DisplayNode for FunctionDefinition {
 
 #[derive(Debug, Clone)]
 pub struct ExternalFunctionDeclaration {
-    pub alias: Option<Identifier>,
     pub name: Identifier,
     pub parameters: Vec<AstType>,
     pub return_type: AstType,
@@ -325,15 +321,9 @@ impl StatementCodegen for ExternalFunctionDeclaration {
             None,
         );
 
-        compiler.symbol_table.insert_function(
-            self.alias
-                .clone()
-                .unwrap_or_else(|| self.name.clone())
-                .identifier,
-            self.name.identifier.clone(),
-            function_type,
-            codegen_function_type,
-        )?;
+        compiler
+            .symbol_table
+            .insert_function(function_type, codegen_function_type)?;
 
         Ok(())
     }
