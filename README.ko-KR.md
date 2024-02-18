@@ -61,19 +61,17 @@ $ cargo build --release
 ```bash
 $ swua --help
 
-Usage: swua [OPTIONS] <COMMAND>
+Usage: swua <COMMAND>
 
 Commands:
   run    JIT compile and run Swua source code
   build  Compile Swua source code to native code
+  repl   Start Swua REPL
   help   Print this message or the help of the given subcommand(s)
 
 Options:
-  -o, --optimization-level <OPTIMIZATION_LEVEL>  Optimization level (0-3, default: 0)
-  -n, --name <NAME>                              Binary name (default: main)
-      --no-verbose                               Don't print verbose information
-  -h, --help                                     Print help
-  -V, --version                                  Print version
+  -h, --help     Print help
+  -V, --version  Print version
 ```
 
 `swua` 명령어는 `run`과 `build` 서브커맨드를 가지고 있습니다. `run`은 소스 코드를 JIT 컴파일하여 실행하고, `build`는 소스 코드를 네이티브 코드로 컴파일합니다.
@@ -89,6 +87,12 @@ Options:
 -   `--optimization-level` : 최적화 레벨을 지정합니다. (0-3, 기본값: 0)
 -   `-n`, `--name` : 바이러니의 이름을 지정합니다. (기본값: `main`)
 -   `--no-verbose` : 자세한 정보를 출력하지 않습니다.
+
+`repl` 명렁어를 통하여 인터프리터를 실행할 수 있습니다. (Read Eval Print Loop)
+
+> [!WARNING]
+>
+> `repl` 명령어는 아직 구현되지 않았습니다. 추후에 구현될 예정입니다.
 
 # 튜토리얼
 
