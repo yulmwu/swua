@@ -40,13 +40,7 @@ fn compile<'a>(
     program.codegen(context, SymbolTable::default(), triple, name)
 }
 
-fn compile_error(
-    error: CompileError,
-    name: &str,
-    filename: &str,
-    file_content: String,
-    _debug: bool,
-) {
+fn compile_error(error: CompileError, name: &str, filename: &str, file_content: String) {
     println!("{}:", "Compilation failed due to".red().bold());
 
     let lines: Vec<&str> = file_content.split('\n').collect();
@@ -81,15 +75,7 @@ fn compile_error(
 #[clap(bin_name = "swua", version = "0.0.0", arg_required_else_help = true)]
 pub struct Cli {
     #[clap(subcommand)]
-    pub subcommand: SubCommand,
-    #[clap(short, long, help = "Optimization level (0-3, default: 0)")]
-    pub optimization_level: Option<u8>,
-    #[clap(short, long, help = "Binary name (default: main)")]
-    pub name: Option<String>,
-    #[clap(long, help = "Don't print verbose information")]
-    pub no_verbose: bool,
-    #[clap(long, help = "Debug mode")]
-    pub debug: bool,
+    subcommand: SubCommand,
 }
 
 #[derive(Subcommand, Debug)]
@@ -98,6 +84,22 @@ pub enum SubCommand {
     Run {
         #[clap(short, long)]
         input: PathBuf,
+        #[clap(
+            short = 'O',
+            long,
+            help = "Optimization level (0-3, default: 0)",
+            default_value_t = 0
+        )]
+        optimization_level: u8,
+        #[clap(
+            short,
+            long,
+            help = "Binary name (default: main)",
+            default_value = "main"
+        )]
+        name: String,
+        #[clap(long, help = "Don't print verbose information")]
+        no_verbose: bool,
     },
     #[clap(name = "build", about = "Compile Swua source code to native code")]
     Build {
@@ -105,6 +107,22 @@ pub enum SubCommand {
         input: PathBuf,
         #[clap(short, long, help = "Build output directory (default: ./build)")]
         output_dir: Option<PathBuf>,
+        #[clap(
+            short = 'O',
+            long,
+            help = "Optimization level (0-3, default: 0)",
+            default_value_t = 0
+        )]
+        optimization_level: u8,
+        #[clap(
+            short,
+            long,
+            help = "Binary name (default: main)",
+            default_value = "main"
+        )]
+        name: String,
+        #[clap(long, help = "Don't print verbose information")]
+        no_verbose: bool,
         #[clap(short, long, help = "Create LLVM IR file")]
         llvm_ir: bool,
         #[clap(short, long, help = "Create ASM file")]
@@ -112,6 +130,8 @@ pub enum SubCommand {
         #[clap(short = 'L', long, help = "Link libraries")]
         link: Option<Vec<String>>,
     },
+    #[clap(name = "repl", about = "Start Swua REPL")]
+    Repl,
 }
 
 fn display_optimization_level(level: OptimizationLevel) -> &'static str {
@@ -143,9 +163,9 @@ fn write_file(path: &Path, content: String) {
     })
 }
 
-fn main() {
-    let cli = Cli::parse();
-    let optimization_level = match cli.optimization_level.unwrap_or(0) {
+#[inline]
+fn optimization_level(level: u8) -> OptimizationLevel {
+    match level {
         0 => OptimizationLevel::None,
         1 => OptimizationLevel::Less,
         2 => OptimizationLevel::Default,
@@ -157,8 +177,11 @@ fn main() {
             );
             exit(1);
         }
-    };
-    let name = cli.name.unwrap_or_else(|| "main".to_string());
+    }
+}
+
+fn main() {
+    let cli = Cli::parse();
 
     let triple = guess_host_triple().unwrap_or_else(|| {
         eprintln!("{}", "Error: Unknown target triple".red().bold());
@@ -167,13 +190,18 @@ fn main() {
     let target_triple = TargetTriple::create(triple);
 
     match cli.subcommand {
-        SubCommand::Run { input } => {
-            if !cli.no_verbose {
+        SubCommand::Run {
+            input,
+            optimization_level: opt,
+            name,
+            no_verbose,
+        } => {
+            if !no_verbose {
                 println!(
                     "{} {} ({name}) [{}]",
                     "Compiling".green().bold(),
                     input.display(),
-                    display_optimization_level(optimization_level)
+                    display_optimization_level(optimization_level(opt))
                 );
             }
 
@@ -184,12 +212,12 @@ fn main() {
             let module = match compile(&context, source_code.clone(), &target_triple, &name) {
                 Ok(module) => module,
                 Err(err) => {
-                    compile_error(err, &name, input.to_str().unwrap(), source_code, cli.debug);
+                    compile_error(err, &name, input.to_str().unwrap(), source_code);
                     exit(1);
                 }
             };
 
-            if !cli.no_verbose {
+            if !no_verbose {
                 println!(
                     "{} in {} ms",
                     "Finished".green().bold(),
@@ -199,7 +227,7 @@ fn main() {
             let now = Instant::now();
 
             let engine = module
-                .create_jit_execution_engine(optimization_level)
+                .create_jit_execution_engine(optimization_level(opt))
                 .unwrap_or_else(|err| {
                     eprintln!(
                         "{}",
@@ -217,7 +245,7 @@ fn main() {
                     .call()
             };
 
-            if !cli.no_verbose {
+            if !no_verbose {
                 println!(
                     "{} in {} ms, `main` function returned: {}",
                     "Run Finished".green().bold(),
@@ -232,16 +260,19 @@ fn main() {
         SubCommand::Build {
             input,
             output_dir,
+            optimization_level: opt,
+            name,
+            no_verbose,
             llvm_ir,
             asm,
             link,
         } => {
-            if !cli.no_verbose {
+            if !no_verbose {
                 println!(
                     "{} {} ({name}) [{}, Target: {}]",
                     "Compiling".green().bold(),
                     input.display(),
-                    display_optimization_level(optimization_level),
+                    display_optimization_level(optimization_level(opt)),
                     triple
                 );
             }
@@ -253,7 +284,7 @@ fn main() {
             let module = match compile(&context, source_code.clone(), &target_triple, &name) {
                 Ok(module) => module,
                 Err(err) => {
-                    compile_error(err, &name, input.to_str().unwrap(), source_code, cli.debug);
+                    compile_error(err, &name, input.to_str().unwrap(), source_code);
                     exit(1);
                 }
             };
@@ -282,7 +313,7 @@ fn main() {
                     &target_triple,
                     "generic",
                     "",
-                    optimization_level,
+                    optimization_level(opt),
                     RelocMode::Default,
                     CodeModel::Default,
                 )
@@ -366,7 +397,7 @@ fn main() {
                 exit(exit_code);
             }
 
-            if !cli.no_verbose {
+            if !no_verbose {
                 println!(
                     "{} in {} ms, output: {}",
                     "Build Finished".green().bold(),
@@ -374,6 +405,10 @@ fn main() {
                     output.display()
                 );
             }
+        }
+        SubCommand::Repl => {
+            println!("{}", "REPL is not implemented yet".red());
+            exit(1);
         }
     }
 }
