@@ -1,5 +1,5 @@
 use super::{
-    types::{AstType, FunctionParameterType},
+    types::{AstType, FunctionParametersType},
     CompileError, CompileResult, Literal,
 };
 use crate::{
@@ -471,7 +471,7 @@ impl ExpressionCodegen for CallExpression {
 
                 let (function, hash) = compiler.symbol_table.get_function(
                     &identifier.identifier,
-                    FunctionParameterType::from(argument_types.clone()),
+                    FunctionParametersType::from(argument_types.clone()),
                 );
 
                 let function = match function {

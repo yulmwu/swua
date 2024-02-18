@@ -160,21 +160,21 @@ impl Hash for StructType {
 #[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
 pub struct FunctionType {
     pub name: String,
-    pub parameters: FunctionParameterType,
+    pub parameters: FunctionParametersType,
     pub return_type: Box<CodegenType>,
     pub span: Span,
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, PartialOrd, Ord)]
-pub struct FunctionParameterType(pub Vec<CodegenType>);
+pub struct FunctionParametersType(pub Vec<CodegenType>);
 
-impl From<Vec<CodegenType>> for FunctionParameterType {
+impl From<Vec<CodegenType>> for FunctionParametersType {
     fn from(parameters: Vec<CodegenType>) -> Self {
         Self(parameters)
     }
 }
 
-impl Hash for FunctionParameterType {
+impl Hash for FunctionParametersType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         for ty in &self.0 {
             ty.hash(state);

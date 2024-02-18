@@ -9,7 +9,7 @@ use crate::{
 use inkwell::{types, values::PointerValue};
 use std::collections::BTreeMap;
 
-use super::types::FunctionParameterType;
+use super::types::FunctionParametersType;
 
 #[derive(Debug, Clone, Default)]
 pub struct SymbolEntries<'a> {
@@ -152,7 +152,7 @@ impl<'a> SymbolTable<'a> {
     pub fn get_function(
         &self,
         alias: &str,
-        parameters: FunctionParameterType,
+        parameters: FunctionParametersType,
     ) -> (Option<FunctionEntry<'a>>, u64) {
         let function_type = FunctionType {
             name: alias.to_string(),
