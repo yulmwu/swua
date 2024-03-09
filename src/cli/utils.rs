@@ -1,5 +1,6 @@
 use crate::{
     codegen::{symbol_table::SymbolTable, CompileError},
+    interpreter::errors::InterpretError,
     lexer::Lexer,
     parser::Parser,
     preprocessor::Preprocessor,
@@ -103,4 +104,13 @@ pub fn compile_error(error: CompileError, name: &str, filename: &str, file_conte
         "--->".blue(),
         error.span.start
     );
+}
+
+pub fn interpret_error(error: InterpretError) {
+    println!("{}:", "Interpretation failed due to".red().bold());
+    println!("{}: {}", "Error".red().bold(), error.kind);
+
+    if let Some(help) = error.help {
+        println!("{}: {help}", "Help".green().bold());
+    }
 }

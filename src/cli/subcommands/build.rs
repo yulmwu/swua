@@ -14,6 +14,7 @@ use crate::cli::utils::{
     write_file,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub fn execute(
     input: PathBuf,
     output_dir: Option<PathBuf>,
