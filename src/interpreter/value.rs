@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::{
     codegen::{
         types::{AstType, AstTypeKind},
@@ -30,6 +32,18 @@ pub struct FunctionValueParameter {
     pub name: String,
     pub ty: Type,
     pub span: Span,
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Int(value) => write!(f, "{}", value),
+            Value::Float(value) => write!(f, "{}", value),
+            Value::Boolean(value) => write!(f, "{}", value),
+            Value::String(value) => write!(f, "{}", value),
+            _ => unimplemented!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

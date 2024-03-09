@@ -3,7 +3,10 @@ use self::{
     errors::{InterpretError, InterpretResult},
     value::{FunctionValue, FunctionValueParameter, Value},
 };
-use crate::codegen::{Block, Expression, FunctionDefinition, LetStatement, Literal, Statement};
+use crate::{
+    codegen::{Block, Expression, FunctionDefinition, LetStatement, Literal, Statement},
+    Program,
+};
 
 pub mod environment;
 pub mod errors;
@@ -13,7 +16,6 @@ pub mod value;
 
 pub struct Interpreter {
     pub environment: Environment,
-    pub program: Vec<Statement>,
 }
 
 impl Interpreter {
@@ -21,32 +23,25 @@ impl Interpreter {
         Default::default()
     }
 
-    pub fn interpret(&mut self) -> InterpretResult<()> {
-        for statement in &self.program.clone() {
-            self.interpret_statement(statement)?;
+    pub fn interpret(&mut self, program: Program) -> InterpretResult<Option<Value>> {
+        let mut last = None;
+
+        for statement in &program.statements.clone() {
+            let result = self.interpret_statement(statement)?;
+            last = result;
+
+            if let Statement::Return(_) = statement {
+                break;
+            }
         }
 
-        Ok(())
+        Ok(last)
     }
 
-    /*
-    Expression(Expression),
-    Let(LetStatement),
-    Function(FunctionDefinition),
-    ExternalFunction(ExternalFunctionDeclaration),
-    Struct(StructDeclaration),
-    Return(ReturnStatement),
-    If(IfStatement),
-    Type(TypeDeclaration),
-    While(While),
-    For(For),
-    Ellipsis,
-     */
-
-    pub fn interpret_statement(&mut self, statement: &Statement) -> InterpretResult<()> {
+    pub fn interpret_statement(&mut self, statement: &Statement) -> InterpretResult<Option<Value>> {
         match statement {
             Statement::Expression(expression) => {
-                self.interpret_expression(expression)?;
+                return Ok(Some(self.interpret_expression(expression)?))
             }
             Statement::Let(stmt) => self.interpret_let(stmt)?,
             Statement::Function(stmt) => self.interpret_function_definition(stmt)?,
@@ -54,7 +49,7 @@ impl Interpreter {
                 todo!("External functions are not supported on interpreter")
             }
             Statement::Struct(_) => todo!(),
-            Statement::Return(_) => todo!(),
+            Statement::Return(expr) => return Ok(Some(self.interpret_return(&expr.value)?)),
             Statement::If(_) => todo!(),
             Statement::Type(_) => todo!(),
             Statement::While(_) => todo!(),
@@ -64,7 +59,7 @@ impl Interpreter {
             }
         }
 
-        Ok(())
+        Ok(None)
     }
 
     pub fn interpret_expression(&mut self, expression: &Expression) -> InterpretResult<Value> {
@@ -115,7 +110,7 @@ impl Interpreter {
         if self
             .environment
             .insert(name.identifier.clone(), value, ty.into())
-            .is_none()
+            .is_some()
         {
             return Err(InterpretError::identifier_already_declared(
                 name.identifier.clone(),
@@ -160,7 +155,7 @@ impl Interpreter {
                 function,
                 return_type.clone().into(),
             )
-            .is_none()
+            .is_some()
         {
             return Err(InterpretError::identifier_already_declared(
                 name.identifier.clone(),
@@ -186,5 +181,9 @@ impl Interpreter {
         self.environment = environment;
 
         Ok(None)
+    }
+
+    pub fn interpret_return(&mut self, expression: &Expression) -> InterpretResult<Value> {
+        self.interpret_expression(expression)
     }
 }
