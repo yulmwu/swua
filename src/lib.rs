@@ -3,6 +3,7 @@ pub mod interpreter;
 pub mod lexer;
 pub mod parser;
 pub mod preprocessor;
+pub mod cli;
 pub mod utils;
 
 use codegen::{
