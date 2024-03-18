@@ -65,7 +65,8 @@ macro_rules! impl_error_kind {
 
 impl_error_kind! {
     UndefinedIdentifier(name: String): undefined_identifier<T: ToString>(T) => "undefined identifier `{name}`",
-    IdentifierAlreadyDeclared(name: String): identifier_already_declared<T: ToString>(T) => "identifier `{name}` already declared"
+    IdentifierAlreadyDeclared(name: String): identifier_already_declared<T: ToString>(T) => "identifier `{name}` already declared",
+    InvalidBinaryOperation(op: String): invalid_binary_operation<T: ToString>(T) => "invalid binary operation `{op}`"
 }
 
 pub type InterpretResult<T> = Result<T, InterpretError>;

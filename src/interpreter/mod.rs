@@ -4,8 +4,10 @@ use self::{
     value::{FunctionValue, FunctionValueParameter, Value},
 };
 use crate::{
-    codegen::{Block, Expression, FunctionDefinition, LetStatement, Literal, Statement},
-    Program,
+    codegen::{
+        BinaryExpression, Block, Expression, FunctionDefinition, LetStatement, Literal, Statement,
+    },
+    BinaryOperator, Program,
 };
 
 pub mod environment;
@@ -65,6 +67,7 @@ impl Interpreter {
     pub fn interpret_expression(&mut self, expression: &Expression) -> InterpretResult<Value> {
         match expression {
             Expression::Literal(literal) => self.interpret_literal(literal),
+            Expression::Binary(expr) => self.interpret_binary(expr),
             _ => todo!(),
         }
     }
@@ -89,6 +92,64 @@ impl Interpreter {
                 .collect::<InterpretResult<Vec<Value>>>()
                 .map(Value::Array),
             _ => todo!(),
+        }
+    }
+
+    pub fn interpret_binary(&mut self, expression: &BinaryExpression) -> InterpretResult<Value> {
+        let left = self.interpret_expression(&expression.left)?;
+        let right = self.interpret_expression(&expression.right)?;
+
+        match expression.operator {
+            BinaryOperator::Dot => unimplemented!(),
+            BinaryOperator::Plus => match (left, right) {
+                (Value::Int(left), Value::Int(right)) => Ok(Value::Int(left + right)),
+                (Value::Float(left), Value::Float(right)) => Ok(Value::Float(left + right)),
+                (Value::String(left), Value::String(right)) => {
+                    Ok(Value::String(format!("{}{}", left, right)))
+                }
+                _ => Err(InterpretError::invalid_binary_operation(
+                    expression.operator.clone(),
+                    expression.span,
+                )),
+            },
+            BinaryOperator::Minus => match (left, right) {
+                (Value::Int(left), Value::Int(right)) => Ok(Value::Int(left - right)),
+                (Value::Float(left), Value::Float(right)) => Ok(Value::Float(left - right)),
+                _ => Err(InterpretError::invalid_binary_operation(
+                    expression.operator.clone(),
+                    expression.span,
+                )),
+            },
+            BinaryOperator::Asterisk => match (left, right) {
+                (Value::Int(left), Value::Int(right)) => Ok(Value::Int(left * right)),
+                (Value::Float(left), Value::Float(right)) => Ok(Value::Float(left * right)),
+                _ => Err(InterpretError::invalid_binary_operation(
+                    expression.operator.clone(),
+                    expression.span,
+                )),
+            },
+            BinaryOperator::Slash => match (left, right) {
+                (Value::Int(left), Value::Int(right)) => Ok(Value::Int(left / right)),
+                (Value::Float(left), Value::Float(right)) => Ok(Value::Float(left / right)),
+                _ => Err(InterpretError::invalid_binary_operation(
+                    expression.operator.clone(),
+                    expression.span,
+                )),
+            },
+            BinaryOperator::Percent => match (left, right) {
+                (Value::Int(left), Value::Int(right)) => Ok(Value::Int(left % right)),
+                (Value::Float(left), Value::Float(right)) => Ok(Value::Float(left % right)),
+                _ => Err(InterpretError::invalid_binary_operation(
+                    expression.operator.clone(),
+                    expression.span,
+                )),
+            },
+            BinaryOperator::EQ => todo!(),
+            BinaryOperator::NEQ => todo!(),
+            BinaryOperator::GT => todo!(),
+            BinaryOperator::GTE => todo!(),
+            BinaryOperator::LT => todo!(),
+            BinaryOperator::LTE => todo!(),
         }
     }
 
