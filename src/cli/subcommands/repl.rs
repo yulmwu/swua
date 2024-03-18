@@ -9,6 +9,7 @@ use crate::{
     },
     lexer::Lexer,
     parser::{Parser, ParsingError},
+    preprocessor::Preprocessor,
 };
 use std::{
     io::{self, Write},
@@ -28,7 +29,12 @@ fn interpret(input: String, interpreter: &mut Interpreter) -> InterpretResult<Op
         .map_err(ParsingError::from)
         .map_err(InterpretError::from)?;
 
-    let program = Parser::new(lexer.tokens.into_iter())
+    let mut preprocessor =
+        Preprocessor::new_with_defines(lexer.tokens.into_iter(), interpreter.defines.clone());
+    let tokens = preprocessor.preprocess().map_err(InterpretError::from)?;
+    interpreter.defines = preprocessor.defines;
+
+    let program = Parser::new(tokens.into_iter())
         .parse_program()
         .map_err(InterpretError::from)?;
 
