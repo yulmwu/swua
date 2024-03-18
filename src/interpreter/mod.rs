@@ -6,8 +6,9 @@ use self::{
 use crate::{
     codegen::{
         BinaryExpression, Block, Expression, FunctionDefinition, LetStatement, Literal, Statement,
+        UnaryExpression,
     },
-    BinaryOperator, Program,
+    BinaryOperator, Program, UnaryOperator,
 };
 
 pub mod environment;
@@ -68,6 +69,7 @@ impl Interpreter {
         match expression {
             Expression::Literal(literal) => self.interpret_literal(literal),
             Expression::Binary(expr) => self.interpret_binary(expr),
+            Expression::Unary(expr) => self.interpret_unary(expr),
             _ => todo!(),
         }
     }
@@ -174,6 +176,28 @@ impl Interpreter {
                 (Value::Int(left), Value::Int(right)) => Ok(Value::Boolean(left <= right)),
                 (Value::Float(left), Value::Float(right)) => Ok(Value::Boolean(left <= right)),
                 _ => Err(InterpretError::invalid_binary_operation(
+                    expression.operator.clone(),
+                    expression.span,
+                )),
+            },
+        }
+    }
+
+    pub fn interpret_unary(&mut self, expression: &UnaryExpression) -> InterpretResult<Value> {
+        let value = self.interpret_expression(&expression.expression)?;
+
+        match expression.operator {
+            UnaryOperator::Minus => match value {
+                Value::Int(value) => Ok(Value::Int(-value)),
+                Value::Float(value) => Ok(Value::Float(-value)),
+                _ => Err(InterpretError::invalid_unary_operation(
+                    expression.operator.clone(),
+                    expression.span,
+                )),
+            },
+            UnaryOperator::Not => match value {
+                Value::Boolean(value) => Ok(Value::Boolean(!value)),
+                _ => Err(InterpretError::invalid_unary_operation(
                     expression.operator.clone(),
                     expression.span,
                 )),
