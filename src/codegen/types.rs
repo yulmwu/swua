@@ -133,9 +133,6 @@ impl Hash for ArrayType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         4.hash(state);
         self.ty.hash(state);
-        if let Some(len) = self.len {
-            len.hash(state);
-        }
     }
 }
 
