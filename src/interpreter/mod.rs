@@ -7,8 +7,7 @@ use crate::{
     codegen::{
         BinaryExpression, Block, Expression, FunctionDefinition, LetStatement, Literal, Statement,
         UnaryExpression,
-    },
-    BinaryOperator, Program, UnaryOperator,
+    }, preprocessor::Defines, BinaryOperator, Program, UnaryOperator
 };
 
 pub mod environment;
@@ -19,6 +18,7 @@ pub mod value;
 
 pub struct Interpreter {
     pub environment: Environment,
+    pub defines: Defines
 }
 
 impl Interpreter {
