@@ -15,7 +15,7 @@ where
     current_token: Token,
     peek_token: Token,
     span: Span,
-    pub defines: Vec<Define>,
+    pub defines: Defines,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -24,6 +24,8 @@ pub struct Define {
     pub tokens: Vec<Token>,
 }
 
+pub type Defines = Vec<Define>;
+
 impl<T> Preprocessor<T>
 where
     T: Iterator<Item = Token> + Default,
@@ -31,6 +33,19 @@ where
     pub fn new(tokens: T) -> Self {
         let mut preprocessor = Self {
             tokens,
+            ..Default::default()
+        };
+
+        preprocessor.next_token();
+        preprocessor.next_token();
+
+        preprocessor
+    }
+
+    pub fn new_with_defines(tokens: T, defines: Defines) -> Self {
+        let mut preprocessor = Self {
+            tokens,
+            defines,
             ..Default::default()
         };
 
