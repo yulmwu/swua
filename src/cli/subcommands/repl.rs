@@ -1,5 +1,3 @@
-use colored::Colorize;
-
 use crate::{
     cli::utils::{interpret_error, write_file},
     interpreter::{
@@ -11,6 +9,7 @@ use crate::{
     parser::{Parser, ParsingError},
     preprocessor::Preprocessor,
 };
+use colored::Colorize;
 use std::{
     io::{self, Write},
     path::Path,
