@@ -8,7 +8,7 @@ use inkwell::{
 };
 use std::{collections::BTreeMap, fmt};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Identifier(Identifier),
     Int(IntLiteral),
@@ -102,7 +102,7 @@ impl DisplayNode for Identifier {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IntLiteral {
     pub value: i64,
     pub span: Span,
@@ -127,7 +127,7 @@ impl DisplayNode for IntLiteral {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FloatLiteral {
     pub value: f64,
     pub span: Span,
@@ -148,7 +148,7 @@ impl DisplayNode for FloatLiteral {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BooleanLiteral {
     pub value: bool,
     pub span: Span,
@@ -173,7 +173,7 @@ impl DisplayNode for BooleanLiteral {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StringLiteral {
     pub value: String,
     pub span: Span,
@@ -198,7 +198,7 @@ impl DisplayNode for StringLiteral {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ArrayLiteral {
     pub elements: Vec<Expression>,
     pub span: Span,
@@ -280,7 +280,7 @@ impl DisplayNode for ArrayLiteral {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StructLiteral {
     pub name: Identifier,
     pub fields: BTreeMap<String, Expression>,

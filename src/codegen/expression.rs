@@ -9,7 +9,7 @@ use crate::{
 use inkwell::values::{BasicMetadataValueEnum, BasicValue};
 use std::fmt;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Literal(Literal),
     Binary(BinaryExpression),
@@ -73,7 +73,7 @@ impl DisplayNode for Expression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BinaryExpression {
     pub left: Box<Expression>,
     pub operator: BinaryOperator,
@@ -237,7 +237,7 @@ impl DisplayNode for BinaryExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnaryExpression {
     pub operator: UnaryOperator,
     pub expression: Box<Expression>,
@@ -295,7 +295,7 @@ impl DisplayNode for UnaryExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AssignExpression {
     pub expression: Box<Expression>,
     pub value: Box<Expression>,
@@ -447,7 +447,7 @@ impl DisplayNode for AssignExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CallExpression {
     pub function: Box<Expression>,
     pub arguments: Vec<Expression>,
@@ -547,7 +547,7 @@ impl DisplayNode for CallExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IndexExpression {
     pub left: Box<Expression>,
     pub index: Box<Expression>,
@@ -601,7 +601,7 @@ impl DisplayNode for IndexExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypeofExpression {
     pub expression: Box<Expression>,
     pub span: Span,
@@ -643,7 +643,7 @@ impl DisplayNode for TypeofExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SizeofExpression {
     pub expression: Box<Expression>,
     pub span: Span,
@@ -681,7 +681,7 @@ impl DisplayNode for SizeofExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CastExpression {
     pub expression: Box<Expression>,
     pub cast_ty: AstType,
@@ -757,7 +757,7 @@ impl DisplayNode for CastExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PointerExpression {
     pub expression: Box<Expression>,
     pub span: Span,
@@ -873,7 +873,7 @@ impl DisplayNode for PointerExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DereferenceExpression {
     pub expression: Box<Expression>,
     pub span: Span,
@@ -904,7 +904,7 @@ impl DisplayNode for DereferenceExpression {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TernaryExpression {
     pub condition: Box<Expression>,
     pub consequence: Box<Expression>,

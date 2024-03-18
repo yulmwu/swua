@@ -8,7 +8,7 @@ use crate::{
 use inkwell::{types::BasicType, IntPredicate};
 use std::{collections::BTreeMap, fmt};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Expression(Expression),
     Let(LetStatement),
@@ -72,7 +72,7 @@ impl DisplayNode for Statement {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LetStatement {
     pub name: Identifier,
     pub ty: Option<AstType>,
@@ -125,7 +125,7 @@ impl DisplayNode for LetStatement {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDefinition {
     pub name: Identifier,
     pub parameters: Vec<Parameter>,
@@ -134,7 +134,7 @@ pub struct FunctionDefinition {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Parameter {
     pub name: Identifier,
     pub ty: AstType,
@@ -267,7 +267,7 @@ impl DisplayNode for FunctionDefinition {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExternalFunctionDeclaration {
     pub name: Identifier,
     pub parameters: Vec<AstType>,
@@ -345,7 +345,7 @@ impl DisplayNode for ExternalFunctionDeclaration {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StructDeclaration {
     pub name: Identifier,
     pub fields: BTreeMap<String, AstType>,
@@ -406,7 +406,7 @@ impl DisplayNode for StructDeclaration {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStatement {
     pub value: Expression,
     pub span: Span,
@@ -441,7 +441,7 @@ impl DisplayNode for ReturnStatement {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IfStatement {
     pub condition: Box<Expression>,
     pub consequence: Block,
@@ -528,7 +528,7 @@ impl DisplayNode for IfStatement {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypeDeclaration {
     pub name: Identifier,
     pub ty: AstType,
@@ -558,7 +558,7 @@ impl DisplayNode for TypeDeclaration {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct While {
     pub condition: Expression,
     pub body: Block,
@@ -616,7 +616,7 @@ impl DisplayNode for While {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct For {
     pub initialization: ForInitialization,
     pub condition: Expression,
@@ -625,7 +625,7 @@ pub struct For {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ForInitialization {
     pub name: Identifier,
     pub value: Expression,
@@ -716,7 +716,7 @@ impl DisplayNode for For {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Block {
     pub statements: Vec<Statement>,
     pub span: Span,
