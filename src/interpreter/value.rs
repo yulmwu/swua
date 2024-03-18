@@ -8,7 +8,7 @@ use crate::{
     Span,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Int(i64),
     Float(f64),
@@ -18,7 +18,7 @@ pub enum Value {
     Function(FunctionValue),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunctionValue {
     pub name: String,
     pub parameters: Vec<FunctionValueParameter>,
@@ -27,7 +27,7 @@ pub struct FunctionValue {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionValueParameter {
     pub name: String,
     pub ty: Type,
@@ -46,7 +46,7 @@ impl fmt::Display for Value {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Int,
     Float,
@@ -57,14 +57,14 @@ pub enum Type {
     // Pointer, Void, Struct
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionType {
     pub name: String,
     pub parameters: FunctionParametersType,
     pub return_type: Box<Type>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionParametersType(pub Vec<Type>);
 
 impl From<AstTypeKind> for Type {

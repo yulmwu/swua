@@ -31,7 +31,7 @@ pub struct Compiler<'a> {
     pub symbol_table: SymbolTable<'a>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CurrentFunction<'a> {
     pub function: FunctionValue<'a>,
     pub return_type: CodegenType,
@@ -45,7 +45,7 @@ pub trait ExpressionCodegen: Clone {
     fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Value<'a> {
     pub llvm_value: BasicValueEnum<'a>,
     pub ty: CodegenType,
@@ -157,7 +157,7 @@ impl fmt::Display for Program {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOperator {
     Dot,      // A.B
     Plus,     // A + B

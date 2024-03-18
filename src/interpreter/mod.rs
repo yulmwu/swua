@@ -144,12 +144,40 @@ impl Interpreter {
                     expression.span,
                 )),
             },
-            BinaryOperator::EQ => todo!(),
-            BinaryOperator::NEQ => todo!(),
-            BinaryOperator::GT => todo!(),
-            BinaryOperator::GTE => todo!(),
-            BinaryOperator::LT => todo!(),
-            BinaryOperator::LTE => todo!(),
+            BinaryOperator::EQ => Ok(Value::Boolean(left == right)),
+            BinaryOperator::NEQ => Ok(Value::Boolean(left != right)),
+            BinaryOperator::GT => match (left, right) {
+                (Value::Int(left), Value::Int(right)) => Ok(Value::Boolean(left > right)),
+                (Value::Float(left), Value::Float(right)) => Ok(Value::Boolean(left > right)),
+                _ => Err(InterpretError::invalid_binary_operation(
+                    expression.operator.clone(),
+                    expression.span,
+                )),
+            },
+            BinaryOperator::GTE => match (left, right) {
+                (Value::Int(left), Value::Int(right)) => Ok(Value::Boolean(left >= right)),
+                (Value::Float(left), Value::Float(right)) => Ok(Value::Boolean(left >= right)),
+                _ => Err(InterpretError::invalid_binary_operation(
+                    expression.operator.clone(),
+                    expression.span,
+                )),
+            },
+            BinaryOperator::LT => match (left, right) {
+                (Value::Int(left), Value::Int(right)) => Ok(Value::Boolean(left < right)),
+                (Value::Float(left), Value::Float(right)) => Ok(Value::Boolean(left < right)),
+                _ => Err(InterpretError::invalid_binary_operation(
+                    expression.operator.clone(),
+                    expression.span,
+                )),
+            },
+            BinaryOperator::LTE => match (left, right) {
+                (Value::Int(left), Value::Int(right)) => Ok(Value::Boolean(left <= right)),
+                (Value::Float(left), Value::Float(right)) => Ok(Value::Boolean(left <= right)),
+                _ => Err(InterpretError::invalid_binary_operation(
+                    expression.operator.clone(),
+                    expression.span,
+                )),
+            },
         }
     }
 
