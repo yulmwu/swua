@@ -64,7 +64,7 @@ pub fn execute() {
             let input = input.split_whitespace().collect::<Vec<&str>>();
 
             match input[0] {
-                "help" => {
+                "help" | "h" => {
                     println!("* {}", "help or h".blue());
                     println!("\tPrints this help message.");
                     println!();
@@ -80,11 +80,11 @@ pub fn execute() {
                     println!("* {}", "quit or q".blue());
                     println!("\tExit the REPL.");
                 }
-                "debug" => {
+                "debug" | "dbg" => {
                     debug = !debug;
                     println!("debug mode: {}", debug);
                 }
-                "history" => {
+                "history" | "his" => {
                     if input.len() > 1 {
                         let file_name = input.clone().remove(1);
                         write_file(Path::new(file_name), {
@@ -109,7 +109,7 @@ pub fn execute() {
                         }
                     }
                 }
-                "config" => {
+                "config" | "cfg" => {
                     if input.len() > 1 {
                         match input[1] {
                             "command_prefix" => {
@@ -138,7 +138,7 @@ pub fn execute() {
                         println!("\tThe prefix for input.");
                     }
                 }
-                "quit" => {
+                "quit" | "q" => {
                     break;
                 }
                 _ => {}
