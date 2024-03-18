@@ -112,19 +112,25 @@ impl BinaryExpression {
         let field_ll_ty = field.1.to_llvm_type(compiler.context);
 
         let ptr = unsafe {
-            compiler.builder.build_gep(
-                CodegenType::Struct(left_ty.clone()).to_llvm_type(compiler.context),
-                left.llvm_value.into_pointer_value(),
-                &[compiler.context.i64_type().const_int(field.0 as u64, false)],
-                format!("ptr.struct.{}.{}", left_ty.name, field.0).as_str(),
-            )
+            compiler
+                .builder
+                .build_gep(
+                    CodegenType::Struct(left_ty.clone()).to_llvm_type(compiler.context),
+                    left.llvm_value.into_pointer_value(),
+                    &[compiler.context.i64_type().const_int(field.0 as u64, false)],
+                    format!("ptr.struct.{}.{}", left_ty.name, field.0).as_str(),
+                )
+                .map_err(|err| CompileError::builder_error(err, self.span))?
         };
 
-        let load = compiler.builder.build_load(
-            field_ll_ty,
-            ptr,
-            format!("struct.{}.{}", left_ty.name, field.0).as_str(),
-        );
+        let load = compiler
+            .builder
+            .build_load(
+                field_ll_ty,
+                ptr,
+                format!("struct.{}.{}", left_ty.name, field.0).as_str(),
+            )
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         Ok(Value::new(
             load,
@@ -165,7 +171,8 @@ impl BinaryExpression {
             Slash => compiler.builder.build_int_signed_div(left, right, "div"),
             Percent => compiler.builder.build_int_signed_rem(left, right, "rem"),
             _ => unreachable!(),
-        };
+        }
+        .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         Ok(Value::new(result.into(), CodegenType::Int))
     }
@@ -220,7 +227,8 @@ impl BinaryExpression {
                     .build_int_compare(inkwell::IntPredicate::SGE, left, right, "gte")
             }
             _ => unreachable!(),
-        };
+        }
+        .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         Ok(Value::new(result.into(), CodegenType::Boolean))
     }
@@ -262,13 +270,15 @@ impl UnaryExpression {
             CodegenType::Int => {
                 let result = compiler
                     .builder
-                    .build_int_neg(expression.llvm_value.into_int_value(), "neg");
+                    .build_int_neg(expression.llvm_value.into_int_value(), "neg")
+                    .map_err(|err| CompileError::builder_error(err, self.span))?;
                 Value::new(result.into(), CodegenType::Int)
             }
             CodegenType::Float => {
                 let result = compiler
                     .builder
-                    .build_float_neg(expression.llvm_value.into_float_value(), "neg");
+                    .build_float_neg(expression.llvm_value.into_float_value(), "neg")
+                    .map_err(|err| CompileError::builder_error(err, self.span))?;
                 Value::new(result.into(), CodegenType::Float)
             }
             _ => return Err(CompileError::expected("int or float", self.span)),
@@ -283,7 +293,10 @@ impl UnaryExpression {
             _ => return Err(CompileError::expected("boolean", self.span)),
         };
 
-        let result = compiler.builder.build_not(expression, "not");
+        let result = compiler
+            .builder
+            .build_not(expression, "not")
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
         Ok(Value::new(result.into(), CodegenType::Boolean))
     }
 }
@@ -320,7 +333,8 @@ impl ExpressionCodegen for AssignExpression {
 
                         compiler
                             .builder
-                            .build_store(entry.pointer, value.llvm_value);
+                            .build_store(entry.pointer, value.llvm_value)
+                            .map_err(|err| CompileError::builder_error(err, self.span))?;
                         value
                     }
                     None => {
@@ -344,12 +358,15 @@ impl ExpressionCodegen for AssignExpression {
                         let element_ll_ty = array.ty.to_llvm_type(compiler.context);
 
                         let ptr = unsafe {
-                            compiler.builder.build_gep(
-                                element_ll_ty,
-                                left.llvm_value.into_pointer_value(),
-                                &[index],
-                                "ptr_array_index",
-                            )
+                            compiler
+                                .builder
+                                .build_gep(
+                                    element_ll_ty,
+                                    left.llvm_value.into_pointer_value(),
+                                    &[index],
+                                    "ptr_array_index",
+                                )
+                                .map_err(|err| CompileError::builder_error(err, self.span))?
                         };
 
                         if *array.ty != value.ty {
@@ -358,7 +375,10 @@ impl ExpressionCodegen for AssignExpression {
                             ));
                         }
 
-                        compiler.builder.build_store(ptr, value.llvm_value);
+                        compiler
+                            .builder
+                            .build_store(ptr, value.llvm_value)
+                            .map_err(|err| CompileError::builder_error(err, self.span))?;
                         value
                     }
                     _ => {
@@ -393,12 +413,15 @@ impl ExpressionCodegen for AssignExpression {
                 };
 
                 let ptr = unsafe {
-                    compiler.builder.build_gep(
-                        CodegenType::Struct(left_ty.clone()).to_llvm_type(compiler.context),
-                        left.llvm_value.into_pointer_value(),
-                        &[compiler.context.i64_type().const_int(field.0 as u64, false)],
-                        format!("ptr.struct.{}.{}", left_ty.name, field.0).as_str(),
-                    )
+                    compiler
+                        .builder
+                        .build_gep(
+                            CodegenType::Struct(left_ty.clone()).to_llvm_type(compiler.context),
+                            left.llvm_value.into_pointer_value(),
+                            &[compiler.context.i64_type().const_int(field.0 as u64, false)],
+                            format!("ptr.struct.{}.{}", left_ty.name, field.0).as_str(),
+                        )
+                        .map_err(|err| CompileError::builder_error(err, self.span))?
                 };
 
                 if field.1 != value.ty {
@@ -409,7 +432,10 @@ impl ExpressionCodegen for AssignExpression {
                     ));
                 }
 
-                compiler.builder.build_store(ptr, value.llvm_value);
+                compiler
+                    .builder
+                    .build_store(ptr, value.llvm_value)
+                    .map_err(|err| CompileError::builder_error(err, self.span))?;
                 value
             }
             Expression::Dereference(dereference) => {
@@ -425,10 +451,13 @@ impl ExpressionCodegen for AssignExpression {
                             ));
                         }
 
-                        compiler.builder.build_store(
-                            expression.llvm_value.into_pointer_value(),
-                            value.llvm_value,
-                        );
+                        compiler
+                            .builder
+                            .build_store(
+                                expression.llvm_value.into_pointer_value(),
+                                value.llvm_value,
+                            )
+                            .map_err(|err| CompileError::builder_error(err, self.span))?;
                         value
                     }
                     _ => return Err(CompileError::expected("pointer", self.span)),
@@ -520,6 +549,7 @@ impl ExpressionCodegen for CallExpression {
             match compiler
                 .builder
                 .build_call(function, _arguments.as_slice(), "call")
+                .map_err(|err| CompileError::builder_error(err, self.span))?
                 .try_as_basic_value()
                 .left()
             {
@@ -568,18 +598,22 @@ impl ExpressionCodegen for IndexExpression {
                 let element_ll_ty = array.ty.to_llvm_type(compiler.context);
 
                 let ptr = unsafe {
-                    compiler.builder.build_gep(
-                        element_ll_ty,
-                        left.llvm_value.into_pointer_value(),
-                        &[index],
-                        "ptr_array_index",
-                    )
+                    compiler
+                        .builder
+                        .build_gep(
+                            element_ll_ty,
+                            left.llvm_value.into_pointer_value(),
+                            &[index],
+                            "ptr_array_index",
+                        )
+                        .map_err(|err| CompileError::builder_error(err, self.span))?
                 };
 
                 Value::new(
                     compiler
                         .builder
-                        .build_load(element_ll_ty, ptr, "load_array_index"),
+                        .build_load(element_ll_ty, ptr, "load_array_index")
+                        .map_err(|err| CompileError::builder_error(err, self.span))?,
                     *array.ty,
                 )
             }
@@ -661,11 +695,14 @@ impl ExpressionCodegen for SizeofExpression {
                 };
                 let length = compiler.context.i64_type().const_int(length as u64, false);
 
-                compiler.builder.build_int_mul(
-                    array_type.ty.size_of(compiler.context, self.span)?,
-                    length,
-                    "array_size",
-                )
+                compiler
+                    .builder
+                    .build_int_mul(
+                        array_type.ty.size_of(compiler.context, self.span)?,
+                        length,
+                        "array_size",
+                    )
+                    .map_err(|err| CompileError::builder_error(err, self.span))?
             }
             ty => ty.size_of(compiler.context, self.span)?,
         };
@@ -695,54 +732,45 @@ impl ExpressionCodegen for CastExpression {
 
         let result = match ty {
             CodegenType::Int => match value.ty {
-                CodegenType::Float => compiler
-                    .builder
-                    .build_float_to_signed_int(
-                        value.llvm_value.into_float_value(),
-                        compiler.context.i64_type(),
-                        "cast",
-                    )
-                    .as_basic_value_enum(),
-                CodegenType::Boolean => compiler
-                    .builder
-                    .build_int_z_extend(
-                        value.llvm_value.into_int_value(),
-                        compiler.context.i64_type(),
-                        "cast",
-                    )
-                    .as_basic_value_enum(),
-                CodegenType::Pointer(_) => compiler
-                    .builder
-                    .build_ptr_to_int(
-                        value.llvm_value.into_pointer_value(),
-                        compiler.context.i64_type(),
-                        "cast",
-                    )
-                    .as_basic_value_enum(),
+                CodegenType::Float => compiler.builder.build_float_to_signed_int(
+                    value.llvm_value.into_float_value(),
+                    compiler.context.i64_type(),
+                    "cast",
+                ),
+                CodegenType::Boolean => compiler.builder.build_int_z_extend(
+                    value.llvm_value.into_int_value(),
+                    compiler.context.i64_type(),
+                    "cast",
+                ),
+                CodegenType::Pointer(_) => compiler.builder.build_ptr_to_int(
+                    value.llvm_value.into_pointer_value(),
+                    compiler.context.i64_type(),
+                    "cast",
+                ),
                 _ => return Err(CompileError::expected("float", self.span)),
-            },
+            }
+            .map_err(|err| CompileError::builder_error(err, self.span))?
+            .as_basic_value_enum(),
             CodegenType::Float => match value.ty {
-                CodegenType::Int => compiler
-                    .builder
-                    .build_signed_int_to_float(
-                        value.llvm_value.into_int_value(),
-                        compiler.context.f64_type(),
-                        "cast",
-                    )
-                    .as_basic_value_enum(),
+                CodegenType::Int => compiler.builder.build_signed_int_to_float(
+                    value.llvm_value.into_int_value(),
+                    compiler.context.f64_type(),
+                    "cast",
+                ),
                 _ => return Err(CompileError::expected("int", self.span)),
-            },
+            }
+            .map_err(|err| CompileError::builder_error(err, self.span))?
+            .as_basic_value_enum(),
             CodegenType::Pointer(_) => match value.ty {
-                CodegenType::Int => compiler
-                    .builder
-                    .build_int_to_ptr(
-                        value.llvm_value.into_int_value(),
-                        ty.to_llvm_type(compiler.context).into_pointer_type(),
-                        "cast",
-                    )
-                    .as_basic_value_enum(),
+                CodegenType::Int => compiler.builder.build_int_to_ptr(
+                    value.llvm_value.into_int_value(),
+                    ty.to_llvm_type(compiler.context).into_pointer_type(),
+                    "cast",
+                ),
                 _ => return Err(CompileError::expected("int", self.span)),
-            },
+            }
+            .map_err(|err| CompileError::builder_error(err, self.span))?
+            .as_basic_value_enum(),
             _ => return Err(CompileError::expected("int or float", self.span)),
         };
 
@@ -795,12 +823,15 @@ impl ExpressionCodegen for PointerExpression {
                         let element_ll_ty = array.ty.to_llvm_type(compiler.context);
 
                         let ptr = unsafe {
-                            compiler.builder.build_gep(
-                                element_ll_ty,
-                                value.llvm_value.into_pointer_value(),
-                                &[index],
-                                "ptr_array_index",
-                            )
+                            compiler
+                                .builder
+                                .build_gep(
+                                    element_ll_ty,
+                                    value.llvm_value.into_pointer_value(),
+                                    &[index],
+                                    "ptr_array_index",
+                                )
+                                .map_err(|err| CompileError::builder_error(err, self.span))?
                         };
 
                         Ok(Value::new(
@@ -838,12 +869,15 @@ impl ExpressionCodegen for PointerExpression {
                 };
 
                 let ptr = unsafe {
-                    compiler.builder.build_gep(
-                        CodegenType::Struct(left_ty.clone()).to_llvm_type(compiler.context),
-                        left.llvm_value.into_pointer_value(),
-                        &[compiler.context.i64_type().const_int(field.0 as u64, false)],
-                        format!("ptr.struct.{}.{}", left_ty.name, field.0).as_str(),
-                    )
+                    compiler
+                        .builder
+                        .build_gep(
+                            CodegenType::Struct(left_ty.clone()).to_llvm_type(compiler.context),
+                            left.llvm_value.into_pointer_value(),
+                            &[compiler.context.i64_type().const_int(field.0 as u64, false)],
+                            format!("ptr.struct.{}.{}", left_ty.name, field.0).as_str(),
+                        )
+                        .map_err(|err| CompileError::builder_error(err, self.span))?
                 };
 
                 Ok(Value::new(
@@ -858,6 +892,7 @@ impl ExpressionCodegen for PointerExpression {
                     compiler
                         .builder
                         .build_alloca(value.ty.to_llvm_type(compiler.context), "ptr")
+                        .map_err(|err| CompileError::builder_error(err, self.span))?
                         .as_basic_value_enum(),
                     CodegenType::Pointer(Box::new(value.ty)),
                 ))
@@ -890,7 +925,10 @@ impl ExpressionCodegen for DereferenceExpression {
                     value.llvm_value.into_pointer_value(),
                     "deref",
                 );
-                Ok(Value::new(value, *ty))
+                Ok(Value::new(
+                    value.map_err(|err| CompileError::builder_error(err, self.span))?,
+                    *ty,
+                ))
             }
             _ => Err(CompileError::expected("pointer", self.span)),
         }
@@ -936,22 +974,31 @@ impl ExpressionCodegen for TernaryExpression {
         let else_block = compiler.context.append_basic_block(function, "else");
         let merge_block = compiler.context.append_basic_block(function, "merge");
 
-        compiler.builder.build_conditional_branch(
-            condition.llvm_value.into_int_value(),
-            then_block,
-            else_block,
-        );
+        compiler
+            .builder
+            .build_conditional_branch(
+                condition.llvm_value.into_int_value(),
+                then_block,
+                else_block,
+            )
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         compiler.builder.position_at_end(then_block);
         let consequence = self.consequence.codegen(compiler)?;
-        compiler.builder.build_unconditional_branch(merge_block);
+        compiler
+            .builder
+            .build_unconditional_branch(merge_block)
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         let then_block = compiler.builder.get_insert_block().unwrap();
 
         compiler.builder.position_at_end(else_block);
 
         let alternative = self.alternative.codegen(compiler)?;
-        compiler.builder.build_unconditional_branch(merge_block);
+        compiler
+            .builder
+            .build_unconditional_branch(merge_block)
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         let else_block = compiler.builder.get_insert_block().unwrap();
 
@@ -967,7 +1014,8 @@ impl ExpressionCodegen for TernaryExpression {
 
         let phi = compiler
             .builder
-            .build_phi(consequence.ty.to_llvm_type(compiler.context), "phi");
+            .build_phi(consequence.ty.to_llvm_type(compiler.context), "phi")
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
         phi.add_incoming(&[
             (&consequence.llvm_value, then_block),
             (&alternative.llvm_value, else_block),

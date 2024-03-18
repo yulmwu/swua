@@ -94,12 +94,18 @@ impl StatementCodegen for LetStatement {
             }
         }
 
-        let alloca = compiler.builder.build_alloca(
-            value.ty.to_llvm_type(compiler.context),
-            &self.name.identifier,
-        );
+        let alloca = compiler
+            .builder
+            .build_alloca(
+                value.ty.to_llvm_type(compiler.context),
+                &self.name.identifier,
+            )
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
-        compiler.builder.build_store(alloca, value.llvm_value);
+        compiler
+            .builder
+            .build_store(alloca, value.llvm_value)
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         compiler.symbol_table.insert_variable(
             self.name.identifier.clone(),
@@ -211,11 +217,18 @@ impl StatementCodegen for FunctionDefinition {
 
         for (i, parameter) in function.get_param_iter().enumerate() {
             let parameter_name = self.parameters[i].name.clone();
-            let alloca = compiler.builder.build_alloca(
-                compiler.context.i64_type(),
-                format!("arg.{}", parameter_name.identifier).as_str(),
-            );
-            compiler.builder.build_store(alloca, parameter);
+            let alloca = compiler
+                .builder
+                .build_alloca(
+                    compiler.context.i64_type(),
+                    format!("arg.{}", parameter_name.identifier).as_str(),
+                )
+                .map_err(|err| CompileError::builder_error(err, self.span))?;
+
+            compiler
+                .builder
+                .build_store(alloca, parameter)
+                .map_err(|err| CompileError::builder_error(err, self.span))?;
 
             compiler.symbol_table.insert_variable(
                 parameter_name.identifier.clone(),
@@ -234,7 +247,10 @@ impl StatementCodegen for FunctionDefinition {
         }
 
         if return_type == CodegenType::Void {
-            compiler.builder.build_return(None);
+            compiler
+                .builder
+                .build_return(None)
+                .map_err(|err| CompileError::builder_error(err, self.span))?;
         }
 
         compiler.symbol_table = original_symbol_table;
@@ -426,7 +442,10 @@ impl StatementCodegen for ReturnStatement {
             ));
         }
 
-        compiler.builder.build_return(Some(&value.llvm_value));
+        compiler
+            .builder
+            .build_return(Some(&value.llvm_value))
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
         compiler.current_return = Some(value);
 
         Ok(())
@@ -462,11 +481,14 @@ impl StatementCodegen for IfStatement {
         let else_block = compiler.context.append_basic_block(function, "else");
         let merge_block = compiler.context.append_basic_block(function, "merge");
 
-        compiler.builder.build_conditional_branch(
-            condition.llvm_value.into_int_value(),
-            then_block,
-            else_block,
-        );
+        compiler
+            .builder
+            .build_conditional_branch(
+                condition.llvm_value.into_int_value(),
+                then_block,
+                else_block,
+            )
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         compiler.builder.position_at_end(then_block);
         self.consequence.codegen(compiler)?;
@@ -480,7 +502,10 @@ impl StatementCodegen for IfStatement {
             .get_terminator()
             .is_none()
         {
-            compiler.builder.build_unconditional_branch(merge_block);
+            compiler
+                .builder
+                .build_unconditional_branch(merge_block)
+                .map_err(|err| CompileError::builder_error(err, self.span))?;
         } else {
             if_terminated = true;
         }
@@ -504,7 +529,10 @@ impl StatementCodegen for IfStatement {
         }
 
         if !if_terminated {
-            compiler.builder.build_unconditional_branch(merge_block);
+            compiler
+                .builder
+                .build_unconditional_branch(merge_block)
+                .map_err(|err| CompileError::builder_error(err, self.span))?;
         }
 
         compiler.builder.position_at_end(merge_block);
@@ -573,7 +601,10 @@ impl StatementCodegen for While {
         let body_block = compiler.context.append_basic_block(function, "while.body");
         let end_block = compiler.context.append_basic_block(function, "while.end");
 
-        compiler.builder.build_unconditional_branch(condition_block);
+        compiler
+            .builder
+            .build_unconditional_branch(condition_block)
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         compiler.builder.position_at_end(condition_block);
         let condition = self.condition.codegen(compiler)?;
@@ -585,20 +616,28 @@ impl StatementCodegen for While {
             ));
         }
 
-        let condition = compiler.builder.build_int_compare(
-            IntPredicate::NE,
-            condition.llvm_value.into_int_value(),
-            compiler.context.i64_type().const_int(0, false),
-            "while.cond",
-        );
+        let condition = compiler
+            .builder
+            .build_int_compare(
+                IntPredicate::NE,
+                condition.llvm_value.into_int_value(),
+                compiler.context.i64_type().const_int(0, false),
+                "while.cond",
+            )
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
+
         compiler
             .builder
-            .build_conditional_branch(condition, body_block, end_block);
+            .build_conditional_branch(condition, body_block, end_block)
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         compiler.builder.position_at_end(body_block);
         self.body.codegen(compiler)?;
 
-        compiler.builder.build_unconditional_branch(condition_block);
+        compiler
+            .builder
+            .build_unconditional_branch(condition_block)
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         compiler.builder.position_at_end(end_block);
 
@@ -609,9 +648,8 @@ impl StatementCodegen for While {
 impl DisplayNode for While {
     fn display(&self, f: &mut fmt::Formatter<'_>, indent: usize) -> fmt::Result {
         display::indent(f, indent)?;
-        writeln!(f, "while ")?;
+        write!(f, "while ")?;
         self.condition.display(f, indent)?;
-        writeln!(f)?;
         self.body.display(f, indent)
     }
 }
@@ -642,11 +680,18 @@ impl StatementCodegen for For {
         let end_block = compiler.context.append_basic_block(function, "for.end");
 
         let value = self.initialization.value.codegen(compiler)?;
-        let alloca = compiler.builder.build_alloca(
-            value.ty.to_llvm_type(compiler.context),
-            &self.initialization.name.identifier,
-        );
-        compiler.builder.build_store(alloca, value.llvm_value);
+        let alloca = compiler
+            .builder
+            .build_alloca(
+                value.ty.to_llvm_type(compiler.context),
+                &self.initialization.name.identifier,
+            )
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
+
+        compiler
+            .builder
+            .build_store(alloca, value.llvm_value)
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         let original_symbol_table = compiler.symbol_table.clone();
         compiler.symbol_table = SymbolTable::new_with_parent(compiler.symbol_table.clone());
@@ -658,7 +703,10 @@ impl StatementCodegen for For {
             self.initialization.name.span,
         )?;
 
-        compiler.builder.build_unconditional_branch(condition_block);
+        compiler
+            .builder
+            .build_unconditional_branch(condition_block)
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         compiler.builder.position_at_end(condition_block);
         let condition = self.condition.codegen(compiler)?;
@@ -670,15 +718,20 @@ impl StatementCodegen for For {
             ));
         }
 
-        let condition = compiler.builder.build_int_compare(
-            IntPredicate::NE,
-            condition.llvm_value.into_int_value(),
-            compiler.context.i64_type().const_int(0, false),
-            "for.cond",
-        );
+        let condition = compiler
+            .builder
+            .build_int_compare(
+                IntPredicate::NE,
+                condition.llvm_value.into_int_value(),
+                compiler.context.i64_type().const_int(0, false),
+                "for.cond",
+            )
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
+
         compiler
             .builder
-            .build_conditional_branch(condition, body_block, end_block);
+            .build_conditional_branch(condition, body_block, end_block)
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         compiler.builder.position_at_end(body_block);
 
@@ -686,12 +739,18 @@ impl StatementCodegen for For {
             statement.codegen(compiler)?;
         }
 
-        compiler.builder.build_unconditional_branch(increment_block);
+        compiler
+            .builder
+            .build_unconditional_branch(increment_block)
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         compiler.builder.position_at_end(increment_block);
         self.increment.codegen(compiler)?;
 
-        compiler.builder.build_unconditional_branch(condition_block);
+        compiler
+            .builder
+            .build_unconditional_branch(condition_block)
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         compiler.builder.position_at_end(end_block);
 

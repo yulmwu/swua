@@ -84,6 +84,7 @@ macro_rules! impl_error_kind {
 }
 
 impl_error_kind! {
+    BuilderError(kind: String): builder_error<T: ToString>(T) => "LLVM Builder: {kind}",
     Expected(expected: String): expected<T: ToString>(T) => "expected `{expected}`",
     Unexpected(unexpected: String): unexpected<T: ToString>(T) => "unexpected `{unexpected}`",
     TypeMismatch(expected: String, found: String): type_mismatch<T: ToString>(T, T) => "expected `{expected}`, but found `{found}`",

@@ -86,11 +86,14 @@ impl ExpressionCodegen for Identifier {
         };
 
         Ok(Value::new(
-            compiler.builder.build_load(
-                entry.ty.to_llvm_type(compiler.context),
-                entry.pointer,
-                format!("load.{}", self.identifier).as_str(),
-            ),
+            compiler
+                .builder
+                .build_load(
+                    entry.ty.to_llvm_type(compiler.context),
+                    entry.pointer,
+                    format!("load.{}", self.identifier).as_str(),
+                )
+                .map_err(|err| CompileError::builder_error(err, self.span))?,
             entry.ty.clone(),
         ))
     }
@@ -183,7 +186,8 @@ impl ExpressionCodegen for StringLiteral {
     fn codegen<'a>(&self, compiler: &mut Compiler<'a>) -> CompileResult<Value<'a>> {
         let string = compiler
             .builder
-            .build_global_string_ptr(self.value.as_str(), ".str");
+            .build_global_string_ptr(self.value.as_str(), ".str")
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         Ok(Value::new(
             string.as_basic_value_enum(),
@@ -235,25 +239,35 @@ impl ExpressionCodegen for ArrayLiteral {
         let array = array_type
             .to_llvm_type(compiler.context)
             .array_type(values.len() as u32);
-        let ptr = compiler.builder.build_array_alloca(
-            array,
-            compiler
-                .context
-                .i64_type()
-                .const_int(values.len() as u64, true),
-            ".array",
-        );
+        let ptr = compiler
+            .builder
+            .build_array_alloca(
+                array,
+                compiler
+                    .context
+                    .i64_type()
+                    .const_int(values.len() as u64, true),
+                ".array",
+            )
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         for (i, val) in values.iter().enumerate() {
             let ptr = unsafe {
-                compiler.builder.build_in_bounds_gep(
-                    array_type.to_llvm_type(compiler.context),
-                    ptr,
-                    &[compiler.context.i64_type().const_int(i as u64, true)],
-                    format!("ptr.array.{}", i).as_str(),
-                )
+                compiler
+                    .builder
+                    .build_in_bounds_gep(
+                        array_type.to_llvm_type(compiler.context),
+                        ptr,
+                        &[compiler.context.i64_type().const_int(i as u64, true)],
+                        format!("ptr.array.{}", i).as_str(),
+                    )
+                    .map_err(|err| CompileError::builder_error(err, self.span))?
             };
-            compiler.builder.build_store(ptr, *val);
+
+            compiler
+                .builder
+                .build_store(ptr, *val)
+                .map_err(|err| CompileError::builder_error(err, self.span))?;
         }
 
         Ok(Value::new(
@@ -331,21 +345,30 @@ impl ExpressionCodegen for StructLiteral {
             feilds_type.insert(val.0.clone(), (i, value.ty));
         }
 
-        let ptr = compiler.builder.build_alloca(
-            entry.ty,
-            format!("struct.{}", self.name.identifier).as_str(),
-        );
+        let ptr = compiler
+            .builder
+            .build_alloca(
+                entry.ty,
+                format!("struct.{}", self.name.identifier).as_str(),
+            )
+            .map_err(|err| CompileError::builder_error(err, self.span))?;
 
         for (i, val) in values.iter().enumerate() {
             let field = unsafe {
-                compiler.builder.build_in_bounds_gep(
-                    compiler.context.i64_type(),
-                    ptr,
-                    &[compiler.context.i64_type().const_int(i as u64, false)],
-                    format!("ptr.struct.{}.{i}", self.name.identifier).as_str(),
-                )
+                compiler
+                    .builder
+                    .build_in_bounds_gep(
+                        compiler.context.i64_type(),
+                        ptr,
+                        &[compiler.context.i64_type().const_int(i as u64, false)],
+                        format!("ptr.struct.{}.{i}", self.name.identifier).as_str(),
+                    )
+                    .map_err(|err| CompileError::builder_error(err, self.span))?
             };
-            compiler.builder.build_store(field, *val);
+            compiler
+                .builder
+                .build_store(field, *val)
+                .map_err(|err| CompileError::builder_error(err, self.span))?;
         }
 
         Ok(Value::new(
