@@ -1,12 +1,15 @@
 use self::{
     environment::Environment,
     errors::{InterpretError, InterpretResult},
-    value::{FunctionValue, FunctionValueParameter, Value},
+    value::{
+        FunctionValue, FunctionValueParameter, StructType, StructTypeField, StructValue,
+        StructValueField, Type, Value,
+    },
 };
 use crate::{
     codegen::{
         BinaryExpression, Block, Expression, FunctionDefinition, LetStatement, Literal, Statement,
-        UnaryExpression,
+        StructDeclaration, UnaryExpression,
     },
     preprocessor::Defines,
     BinaryOperator, Program, UnaryOperator,
@@ -53,7 +56,7 @@ impl Interpreter {
             Statement::ExternalFunction(_) => {
                 todo!("External functions are not supported on interpreter")
             }
-            Statement::Struct(_) => todo!(),
+            Statement::Struct(stmt) => self.interpret_struct(stmt)?,
             Statement::Return(expr) => return Ok(Some(self.interpret_return(&expr.value)?)),
             Statement::If(_) => todo!(),
             Statement::Type(_) => todo!(),
@@ -298,7 +301,48 @@ impl Interpreter {
         Ok(None)
     }
 
+    pub fn interpret_struct(&mut self, statement: &StructDeclaration) -> InterpretResult<()> {
+        let StructDeclaration { name, fields, span } = statement;
+
+        if self
+            .environment
+            .insert(
+                name.identifier.clone(),
+                Value::Struct(StructValue {
+                    name: name.identifier.clone(),
+                    fields: fields
+                        .iter()
+                        .map(|field| StructValueField {
+                            name: field.0.clone(),
+                            ty: field.1.ty.clone().into(),
+                            span: field.1.span,
+                        })
+                        .collect(),
+                    span: *span,
+                }),
+                Type::Struct(StructType {
+                    name: name.identifier.clone(),
+                    fields: fields
+                        .iter()
+                        .map(|field| StructTypeField {
+                            name: field.0.clone(),
+                            ty: field.1.ty.clone().into(),
+                        })
+                        .collect(),
+                }),
+            )
+            .is_some()
+        {
+            return Err(InterpretError::identifier_already_declared(
+                name.identifier.clone(),
+                *span,
+            ));
+        }
+
+        Ok(())
+    }
+
     pub fn interpret_return(&mut self, expression: &Expression) -> InterpretResult<Value> {
-        self.interpret_expression(expression)
+        self.interpret_expression(expression) // TODO: Return from function
     }
 }

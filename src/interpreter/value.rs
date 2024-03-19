@@ -16,6 +16,7 @@ pub enum Value {
     String(String),
     Array(Vec<Value>),
     Function(FunctionValue),
+    Struct(StructValue),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -29,6 +30,20 @@ pub struct FunctionValue {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionValueParameter {
+    pub name: String,
+    pub ty: Type,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructValue {
+    pub name: String,
+    pub fields: Vec<StructValueField>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructValueField {
     pub name: String,
     pub ty: Type,
     pub span: Span,
@@ -54,7 +69,8 @@ pub enum Type {
     String,
     Array(Box<Type>),
     Function(FunctionType),
-    // Pointer, Void, Struct
+    Struct(StructType),
+    // Pointer, Void
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -66,6 +82,18 @@ pub struct FunctionType {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionParametersType(pub Vec<Type>);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructType {
+    pub name: String,
+    pub fields: Vec<StructTypeField>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructTypeField {
+    pub name: String,
+    pub ty: Type,
+}
 
 impl From<AstTypeKind> for Type {
     fn from(ty: AstTypeKind) -> Self {
