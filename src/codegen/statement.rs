@@ -364,7 +364,13 @@ impl DisplayNode for ExternalFunctionDeclaration {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDeclaration {
     pub name: Identifier,
-    pub fields: BTreeMap<String, AstType>,
+    pub fields: BTreeMap<String, StructDeclarationField>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructDeclarationField {
+    pub ty: AstType,
     pub span: Span,
 }
 
@@ -372,10 +378,17 @@ impl StatementCodegen for StructDeclaration {
     fn codegen(&self, compiler: &mut Compiler) -> CompileResult<()> {
         let mut fields = BTreeMap::new();
 
-        for (i, (name, ty)) in self.fields.iter().enumerate() {
+        for (i, (name, field)) in self.fields.iter().enumerate() {
             fields.insert(
                 name.clone(),
-                (i, ty.kind.to_codegen_type(&compiler.symbol_table)?.clone()),
+                (
+                    i,
+                    field
+                        .ty
+                        .kind
+                        .to_codegen_type(&compiler.symbol_table)?
+                        .clone(),
+                ),
             );
         }
 
@@ -412,10 +425,10 @@ impl DisplayNode for StructDeclaration {
         display::indent(f, indent)?;
         write!(f, "struct ")?;
         self.name.display(f, indent)?;
-        for (name, ty) in self.fields.iter() {
+        for (name, field) in self.fields.iter() {
             writeln!(f)?;
             display::indent(f, indent + 1)?;
-            write!(f, "| {} {}", name, ty.kind)?;
+            write!(f, "| {} {}", name, field.ty.kind)?;
         }
         writeln!(f)?;
         display::indent(f, indent)
