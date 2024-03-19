@@ -149,22 +149,59 @@ pub fn execute() {
                 }
                 "editor" | "e" => {
                     println!("Entered editor mode. Type '{command_prefix}q' to exit the editor and execute the code.");
+                    println!("Type '{command_prefix}c' to cancel the code.");
 
                     let mut code = String::new();
-                    let mut line = 0;
+                    let mut line = 1;
                     loop {
-                        line += 1;
-
                         print!("{} ", format!("{line}").on_bright_white().black());
                         io::stdout().flush().unwrap();
 
                         let input = read_line();
-                        if input == format!("{command_prefix}q") {
-                            break;
-                        } else {
-                            code.push_str(input.as_str());
-                            code.push('\n');
+                        if input.starts_with(command_prefix.trim()) {
+                            let input = input.trim_start_matches(command_prefix.trim()).trim();
+                            let splited = input.split_whitespace().collect::<Vec<&str>>();
+
+                            match splited[0] {
+                                "quit" | "q" => {
+                                    print!(
+                                        "{} ",
+                                        "Would you like to exit the editor? (y/n)"
+                                            .on_white()
+                                            .black()
+                                    );
+                                    io::stdout().flush().unwrap();
+
+                                    match read_line().as_str() {
+                                        "Y" | "y" => break,
+                                        _ => continue,
+                                    }
+                                }
+                                "cancel" | "c" => {
+                                    print!(
+                                        "{} ",
+                                        "Would you like to cancel the input? (y/n)"
+                                            .on_white()
+                                            .black()
+                                    );
+                                    io::stdout().flush().unwrap();
+
+                                    match read_line().as_str() {
+                                        "Y" | "y" => {
+                                            code.clear();
+                                            break;
+                                        }
+                                        _ => continue,
+                                    }
+                                }
+                                _ => {
+                                    code.push_str(input);
+                                    code.push('\n');
+                                }
+                            }
                         }
+
+                        line += 1;
                     }
 
                     match interpret(code, &mut interpreter) {
