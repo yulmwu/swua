@@ -8,8 +8,8 @@ use crate::{
         FloatLiteral, For, ForInitialization, FunctionDefinition, Identifier, IfStatement,
         IndexExpression, IntLiteral, LetStatement, Literal, Parameter, PointerExpression,
         ReturnStatement, SizeofExpression, Statement, StringLiteral, StructDeclaration,
-        StructLiteral, TernaryExpression, TypeDeclaration, TypeofExpression, UnaryExpression,
-        While,
+        StructDeclarationField, StructLiteral, TernaryExpression, TypeDeclaration,
+        TypeofExpression, UnaryExpression, While,
     },
     lexer::{
         tokens::{Token, TokenKind},
@@ -529,7 +529,13 @@ where
                 let ty = self.parse_ty()?;
                 self.next_token();
 
-                fields.insert(key.identifier.clone(), ty);
+                fields.insert(
+                    key.identifier.clone(),
+                    StructDeclarationField {
+                        ty,
+                        span: self.span,
+                    },
+                );
 
                 self.expect_token_consume(TokenKind::Newline)?;
 
