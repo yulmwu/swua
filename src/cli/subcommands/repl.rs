@@ -48,7 +48,7 @@ pub fn execute() {
     let mut command_prefix = String::from("// ");
     let mut input_prefix = String::from(">> ");
 
-    println!("type '{command_prefix}help' for help");
+    println!("Type '{command_prefix}help' for help, '{command_prefix}quit' to exit the REPL.");
 
     loop {
         print!(
@@ -56,7 +56,7 @@ pub fn execute() {
             if is_previous_error {
                 input_prefix.red()
             } else {
-                input_prefix.green()
+                input_prefix.bright_green()
             }
         );
         io::stdout().flush().unwrap();
@@ -81,6 +81,9 @@ pub fn execute() {
                     println!();
                     println!("* {}", "config or cfg".blue());
                     println!("\tConfigure the REPL.\n\tIf there are no arguments, a description of the config is printed.");
+                    println!();
+                    println!("* {}", "editor or e".blue());
+                    println!("\tOpen the editor. You can exit the editor by typing '{command_prefix}q' and it will execute the code.");
                     println!();
                     println!("* {}", "quit or q".blue());
                     println!("\tExit the REPL.");
@@ -120,8 +123,9 @@ pub fn execute() {
                             "command_prefix" => {
                                 if input.len() > 2 {
                                     command_prefix = input[2].to_string();
+                                    println!("New command prefix: {}", command_prefix);
                                 } else {
-                                    println!("command_prefix: {}", command_prefix);
+                                    println!("Command prefix: {}", command_prefix);
                                 }
                             }
                             "input_prefix" => {
@@ -141,6 +145,43 @@ pub fn execute() {
                         println!();
                         println!("* {}", "input_prefix".blue());
                         println!("\tThe prefix for input.");
+                    }
+                }
+                "editor" | "e" => {
+                    println!("Entered editor mode. Type '{command_prefix}q' to exit the editor and execute the code.");
+
+                    let mut code = String::new();
+                    let mut line = 0;
+                    loop {
+                        line += 1;
+
+                        print!("{} ", format!("{line}").on_bright_white().black());
+                        io::stdout().flush().unwrap();
+
+                        let input = read_line();
+                        if input == format!("{command_prefix}q") {
+                            break;
+                        } else {
+                            code.push_str(input.as_str());
+                            code.push('\n');
+                        }
+                    }
+
+                    match interpret(code, &mut interpreter) {
+                        Ok(value) => {
+                            is_previous_error = false;
+                            if let Some(value) = value {
+                                if debug {
+                                    println!("{value:?}");
+                                } else {
+                                    println!("{value}");
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            is_previous_error = true;
+                            interpret_error(err)
+                        }
                     }
                 }
                 "quit" | "q" => {
