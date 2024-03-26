@@ -118,3 +118,33 @@ impl From<AstType> for Type {
         ty.kind.into()
     }
 }
+
+impl From<Value> for Type {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Int(_) => Type::Int,
+            Value::Float(_) => Type::Float,
+            Value::Boolean(_) => Type::Boolean,
+            Value::String(_) => Type::String,
+            Value::Array(_) => unimplemented!(),
+            Value::Function(function) => Type::Function(FunctionType {
+                name: function.name,
+                parameters: FunctionParametersType(
+                    function.parameters.iter().map(|p| p.ty.clone()).collect(),
+                ),
+                return_type: function.return_type.clone(),
+            }),
+            Value::Struct(struct_value) => Type::Struct(StructType {
+                name: struct_value.name,
+                fields: struct_value
+                    .fields
+                    .iter()
+                    .map(|f| StructTypeField {
+                        name: f.name.clone(),
+                        ty: f.ty.clone(),
+                    })
+                    .collect(),
+            }),
+        }
+    }
+}

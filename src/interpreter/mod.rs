@@ -9,8 +9,8 @@ use self::{
 };
 use crate::{
     codegen::{
-        BinaryExpression, Block, CallExpression, Expression, FunctionDefinition, IfStatement,
-        LetStatement, Literal, Statement, StructDeclaration, UnaryExpression,
+        AssignExpression, BinaryExpression, Block, CallExpression, Expression, FunctionDefinition,
+        IfStatement, LetStatement, Literal, Statement, StructDeclaration, UnaryExpression,
     },
     preprocessor::Defines,
     BinaryOperator, Program, UnaryOperator,
@@ -78,13 +78,35 @@ impl Interpreter {
         Ok(None)
     }
 
+    /*
+
+    Literal(Literal),
+    Binary(BinaryExpression),
+    Unary(UnaryExpression),
+    Assign(AssignExpression),
+    Call(CallExpression),
+    Index(IndexExpression),
+    Typeof(TypeofExpression),
+    Sizeof(SizeofExpression),
+    Cast(CastExpression),
+    Pointer(PointerExpression),
+    Dereference(DereferenceExpression),
+    Ternary(TernaryExpression), */
+
     pub fn interpret_expression(&mut self, expression: &Expression) -> InterpretResult<Value> {
         match expression {
             Expression::Literal(literal) => self.interpret_literal(literal),
             Expression::Binary(expr) => self.interpret_binary(expr),
             Expression::Unary(expr) => self.interpret_unary(expr),
+            Expression::Assign(expr) => self.interpret_assign(expr),
             Expression::Call(expr) => self.interpret_call(expr),
-            _ => todo!(),
+            Expression::Index(_) => todo!(),
+            Expression::Typeof(_) => todo!(),
+            Expression::Sizeof(_) => todo!(),
+            Expression::Cast(_) => todo!(),
+            Expression::Pointer(_) => todo!(),
+            Expression::Dereference(_) => todo!(),
+            Expression::Ternary(_) => todo!(),
         }
     }
 
@@ -219,6 +241,34 @@ impl Interpreter {
         }
     }
 
+    pub fn interpret_assign(&mut self, expression: &AssignExpression) -> InterpretResult<Value> {
+        let value = self.interpret_expression(&expression.value)?;
+
+        match *expression.expression.clone() {
+            Expression::Literal(literal) => match literal {
+                Literal::Identifier(name) => match self.environment.get(name.identifier.clone()) {
+                    Some(entry) => {
+                        self.environment.insert(
+                            name.identifier.clone(),
+                            value.clone(),
+                            entry.ty.clone(),
+                        );
+                    }
+                    None => {
+                        return Err(InterpretError::undefined_identifier(
+                            name.identifier.clone(),
+                            name.span,
+                        ));
+                    }
+                },
+                _ => todo!(),
+            },
+            _ => todo!(),
+        }
+
+        Ok(value)
+    }
+
     pub fn interpret_call(&mut self, expression: &CallExpression) -> InterpretResult<Value> {
         let args = expression
             .arguments
@@ -275,13 +325,13 @@ impl Interpreter {
         let value = self.interpret_expression(value)?;
 
         let ty = match ty {
-            Some(ty) => ty.clone(),
-            None => unimplemented!(),
+            Some(ty) => ty.clone().into(),
+            None => value.clone().into(),
         };
 
         if self
             .environment
-            .insert(name.identifier.clone(), value, ty.into())
+            .insert(name.identifier.clone(), value, ty)
             .is_some()
         {
             return Err(InterpretError::identifier_already_declared(
