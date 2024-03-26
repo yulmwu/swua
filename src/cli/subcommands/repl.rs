@@ -18,7 +18,7 @@ use std::{
 fn read_line() -> String {
     let mut input = String::new();
     io::stdin().read_line(&mut input).unwrap();
-    input.trim().to_string()
+    input.to_string()
 }
 
 fn interpret(input: String, interpreter: &mut Interpreter) -> InterpretResult<Option<Value>> {
@@ -149,8 +149,9 @@ pub fn execute() {
                 }
                 "editor" | "e" => {
                     println!("Entered editor mode. Type '{command_prefix}q' to exit the editor and execute the code.");
-                    println!("Type '{command_prefix}c' to cancel the code.");
+                    println!("To exit or cancel, press Enter twice.");
 
+                    let mut previous = "Dummy".to_string();
                     let mut code = String::new();
                     let mut line = 1;
                     loop {
@@ -158,50 +159,32 @@ pub fn execute() {
                         io::stdout().flush().unwrap();
 
                         let input = read_line();
-                        if input.starts_with(command_prefix.trim()) {
-                            let input = input.trim_start_matches(command_prefix.trim()).trim();
-                            let splited = input.split_whitespace().collect::<Vec<&str>>();
 
-                            match splited[0] {
-                                "quit" | "q" => {
-                                    print!(
-                                        "{} ",
-                                        "Would you like to exit the editor? (y/n)"
-                                            .on_white()
-                                            .black()
-                                    );
-                                    io::stdout().flush().unwrap();
+                        if previous.trim().is_empty() && input.trim().is_empty() {
+                            print!(
+                                "{} ",
+                                "Would you like to exit(`e`) or clear(`c`) the input? (E/C): "
+                                    .on_white()
+                                    .black()
+                            );
+                            io::stdout().flush().unwrap();
 
-                                    match read_line().as_str() {
-                                        "Y" | "y" => break,
-                                        _ => continue,
-                                    }
+                            match read_line().trim() {
+                                "e" | "E" => break,
+                                "c" | "C" => {
+                                    code.clear();
+                                    line = 1;
+                                    continue;
                                 }
-                                "cancel" | "c" => {
-                                    print!(
-                                        "{} ",
-                                        "Would you like to cancel the input? (y/n)"
-                                            .on_white()
-                                            .black()
-                                    );
-                                    io::stdout().flush().unwrap();
-
-                                    match read_line().as_str() {
-                                        "Y" | "y" => {
-                                            code.clear();
-                                            break;
-                                        }
-                                        _ => continue,
-                                    }
-                                }
-                                _ => {
-                                    code.push_str(input);
-                                    code.push('\n');
-                                }
+                                _ => continue,
                             }
                         }
 
+                        code.push_str(input.as_str());
+                        code.push('\n');
+
                         line += 1;
+                        previous = input;
                     }
 
                     match interpret(code, &mut interpreter) {
