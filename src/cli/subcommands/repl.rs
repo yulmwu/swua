@@ -68,6 +68,10 @@ pub fn execute() {
             let input = input.trim_start_matches(command_prefix.trim()).trim();
             let input = input.split_whitespace().collect::<Vec<&str>>();
 
+            if input.is_empty() {
+                continue;
+            }
+
             match input[0] {
                 "help" | "h" => {
                     println!("* {}", "help or h".blue());
