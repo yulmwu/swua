@@ -1,4 +1,5 @@
 use self::{
+    builtins::{lookup_function, setup_builtins},
     environment::Environment,
     errors::{InterpretError, InterpretResult},
     value::{
@@ -8,13 +9,14 @@ use self::{
 };
 use crate::{
     codegen::{
-        BinaryExpression, Block, Expression, FunctionDefinition, LetStatement, Literal, Statement,
-        StructDeclaration, UnaryExpression,
+        BinaryExpression, Block, CallExpression, Expression, FunctionDefinition, IfStatement,
+        LetStatement, Literal, Statement, StructDeclaration, UnaryExpression,
     },
     preprocessor::Defines,
     BinaryOperator, Program, UnaryOperator,
 };
 
+pub mod builtins;
 pub mod environment;
 pub mod errors;
 pub mod value;
@@ -28,7 +30,13 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
-        Default::default()
+        let mut environment = Environment::new();
+        setup_builtins(&mut environment);
+
+        Self {
+            environment,
+            ..Default::default()
+        }
     }
 
     pub fn interpret(&mut self, program: Program) -> InterpretResult<Option<Value>> {
@@ -58,7 +66,7 @@ impl Interpreter {
             }
             Statement::Struct(stmt) => self.interpret_struct(stmt)?,
             Statement::Return(expr) => return Ok(Some(self.interpret_return(&expr.value)?)),
-            Statement::If(_) => todo!(),
+            Statement::If(stmt) => self.interpret_if(stmt)?,
             Statement::Type(_) => todo!(),
             Statement::While(_) => todo!(),
             Statement::For(_) => todo!(),
@@ -75,6 +83,7 @@ impl Interpreter {
             Expression::Literal(literal) => self.interpret_literal(literal),
             Expression::Binary(expr) => self.interpret_binary(expr),
             Expression::Unary(expr) => self.interpret_unary(expr),
+            Expression::Call(expr) => self.interpret_call(expr),
             _ => todo!(),
         }
     }
@@ -210,6 +219,51 @@ impl Interpreter {
         }
     }
 
+    pub fn interpret_call(&mut self, expression: &CallExpression) -> InterpretResult<Value> {
+        let args = expression
+            .arguments
+            .iter()
+            .map(|arg| self.interpret_expression(arg))
+            .collect::<InterpretResult<Vec<Value>>>()?;
+
+        let function = self.interpret_expression(&expression.function)?;
+
+        if let Some(builtin) = lookup_function(&function.to_string()) {
+            let mut environment = Environment::new_with_parent(self.environment.clone());
+            let result = builtin.call(args, &mut environment)?;
+            self.environment = environment;
+
+            return Ok(result);
+        }
+
+        match function {
+            Value::Function(function) => {
+                if function.parameters.len() != args.len() {
+                    return Err(InterpretError::invalid_number_of_arguments(
+                        function.parameters.len().to_string(),
+                        args.len().to_string(),
+                        expression.span,
+                    ));
+                }
+
+                let mut environment = Environment::new_with_parent(self.environment.clone());
+
+                for (parameter, arg) in function.parameters.iter().zip(args) {
+                    environment.insert(parameter.name.clone(), arg, parameter.ty.clone());
+                }
+
+                let body = function.body.clone();
+
+                let result = self.interpret_block(body, Some(environment))?;
+                Ok(result.unwrap())
+            }
+            _ => Err(InterpretError::not_a_function(
+                function.to_string(),
+                expression.span,
+            )),
+        }
+    }
+
     pub fn interpret_let(&mut self, statement: &LetStatement) -> InterpretResult<()> {
         let LetStatement {
             name,
@@ -284,9 +338,17 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn interpret_block(&mut self, block: Block) -> InterpretResult<Option<Value>> {
-        let environment = self.environment.clone();
-        self.environment = Environment::new_with_parent(self.environment.clone());
+    pub fn interpret_block(
+        &mut self,
+        block: Block,
+        environment: Option<Environment>,
+    ) -> InterpretResult<Option<Value>> {
+        let original_environment = self.environment.clone();
+        if let Some(environment) = environment {
+            self.environment = environment;
+        } else {
+            self.environment = Environment::new_with_parent(self.environment.clone());
+        }
 
         for statement in block.statements {
             self.interpret_statement(&statement)?;
@@ -296,7 +358,7 @@ impl Interpreter {
             }
         }
 
-        self.environment = environment;
+        self.environment = original_environment;
 
         Ok(None)
     }
@@ -344,5 +406,28 @@ impl Interpreter {
 
     pub fn interpret_return(&mut self, expression: &Expression) -> InterpretResult<Value> {
         self.interpret_expression(expression) // TODO: Return from function
+    }
+
+    pub fn interpret_if(&mut self, statement: &IfStatement) -> InterpretResult<()> {
+        let IfStatement {
+            condition,
+            consequence,
+            alternative,
+            span,
+        } = statement;
+
+        let condition = self.interpret_expression(condition)?;
+
+        if let Value::Boolean(condition) = condition {
+            if condition {
+                self.interpret_block(consequence.clone(), None)?;
+            } else if let Some(else_block) = alternative {
+                self.interpret_block(else_block.clone(), None)?;
+            }
+        } else {
+            return Err(InterpretError::invalid_condition_type(*span));
+        }
+
+        Ok(())
     }
 }

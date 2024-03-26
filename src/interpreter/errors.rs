@@ -67,7 +67,10 @@ impl_error_kind! {
     UndefinedIdentifier(name: String): undefined_identifier<T: ToString>(T) => "undefined identifier `{name}`",
     IdentifierAlreadyDeclared(name: String): identifier_already_declared<T: ToString>(T) => "identifier `{name}` already declared",
     InvalidBinaryOperation(op: String): invalid_binary_operation<T: ToString>(T) => "invalid binary operation `{op}`",
-    InvalidUnaryOperation(op: String): invalid_unary_operation<T: ToString>(T) => "invalid unary operation `{op}`"
+    InvalidUnaryOperation(op: String): invalid_unary_operation<T: ToString>(T) => "invalid unary operation `{op}`",
+    InvalidConditionType: invalid_condition_type => "invalid condition type",
+    InvalidNumberOfArguments(expected: String, got: String): invalid_number_of_arguments<T: ToString>(T, T) => "invalid number of arguments, expected `{expected}`, got `{got}`",
+    NotAFunction(name: String): not_a_function<T: ToString>(T) => "`{name}` is not a function"
 }
 
 pub type InterpretResult<T> = Result<T, InterpretError>;
