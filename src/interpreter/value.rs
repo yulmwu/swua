@@ -1,5 +1,3 @@
-use std::fmt;
-
 use crate::{
     codegen::{
         types::{AstType, AstTypeKind},
@@ -7,6 +5,7 @@ use crate::{
     },
     Span,
 };
+use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -145,6 +144,33 @@ impl From<Value> for Type {
                     })
                     .collect(),
             }),
+        }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::Int => write!(f, "int"),
+            Type::Float => write!(f, "float"),
+            Type::Boolean => write!(f, "boolean"),
+            Type::String => write!(f, "string"),
+            Type::Array(ty) => write!(f, "{}[]", ty),
+            Type::Function(function_type) => {
+                write!(f, "fn {}", function_type.name)?;
+                if !function_type.parameters.0.is_empty() {
+                    write!(f, "(")?;
+                    for (i, ty) in function_type.parameters.0.iter().enumerate() {
+                        write!(f, "{}", ty)?;
+                        if i < function_type.parameters.0.len() - 1 {
+                            write!(f, ", ")?;
+                        }
+                    }
+                    write!(f, ")")?;
+                }
+                write!(f, " -> {}", function_type.return_type)
+            }
+            Type::Struct(struct_type) => write!(f, "struct {}", struct_type.name),
         }
     }
 }

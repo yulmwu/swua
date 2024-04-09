@@ -70,7 +70,8 @@ impl_error_kind! {
     InvalidUnaryOperation(op: String): invalid_unary_operation<T: ToString>(T) => "invalid unary operation `{op}`",
     InvalidConditionType: invalid_condition_type => "invalid condition type",
     InvalidNumberOfArguments(expected: String, got: String): invalid_number_of_arguments<T: ToString>(T, T) => "invalid number of arguments, expected `{expected}`, got `{got}`",
-    NotAFunction(name: String): not_a_function<T: ToString>(T) => "`{name}` is not a function"
+    NotAFunction(name: String): not_a_function<T: ToString>(T) => "`{name}` is not a function",
+    TypeMismatch(expected: String, got: String): type_mismatch<T: ToString>(T, T) => "type mismatch, expected `{expected}`, got `{got}`"
 }
 
 pub type InterpretResult<T> = Result<T, InterpretError>;

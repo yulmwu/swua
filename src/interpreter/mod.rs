@@ -10,7 +10,8 @@ use self::{
 use crate::{
     codegen::{
         AssignExpression, BinaryExpression, Block, CallExpression, Expression, FunctionDefinition,
-        IfStatement, LetStatement, Literal, Statement, StructDeclaration, UnaryExpression,
+        IfStatement, LetStatement, Literal, Statement, StructDeclaration, TypeofExpression,
+        UnaryExpression,
     },
     preprocessor::Defines,
     BinaryOperator, Program, UnaryOperator,
@@ -101,7 +102,7 @@ impl Interpreter {
             Expression::Assign(expr) => self.interpret_assign(expr),
             Expression::Call(expr) => self.interpret_call(expr),
             Expression::Index(_) => todo!(),
-            Expression::Typeof(_) => todo!(),
+            Expression::Typeof(expr) => self.interpret_typeof(expr),
             Expression::Sizeof(_) => todo!(),
             Expression::Cast(_) => todo!(),
             Expression::Pointer(_) => todo!(),
@@ -314,6 +315,23 @@ impl Interpreter {
         }
     }
 
+    pub fn interpret_typeof(&mut self, expression: &TypeofExpression) -> InterpretResult<Value> {
+        let value = self.interpret_expression(&expression.expression)?;
+        let value_type: Type = value.clone().into();
+
+        Ok(match value_type {
+            Type::Int => Value::Int(0),
+            Type::Float => Value::Int(1),
+            Type::String => Value::Int(2),
+            Type::Boolean => Value::Int(3),
+            Type::Array(_) => Value::Int(4),
+            Type::Struct(_) => Value::Int(5),
+            Type::Function(_) => Value::Int(6),
+            // Type::Void => Value::Int(7),
+            // Type::Pointer(_) => Value::Int(8),
+        })
+    }
+
     pub fn interpret_let(&mut self, statement: &LetStatement) -> InterpretResult<()> {
         let LetStatement {
             name,
@@ -323,10 +341,18 @@ impl Interpreter {
         } = statement;
 
         let value = self.interpret_expression(value)?;
+        let value_type: Type = value.clone().into();
 
         let ty = match ty {
-            Some(ty) => ty.clone().into(),
-            None => value.clone().into(),
+            Some(ty) => {
+                let ty = ty.clone().into();
+                if ty != value_type {
+                    return Err(InterpretError::type_mismatch(ty, value_type, *span));
+                }
+
+                ty
+            }
+            None => value_type.clone(),
         };
 
         if self
