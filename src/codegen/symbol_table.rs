@@ -8,7 +8,6 @@ use crate::{
 };
 use inkwell::{types, values::PointerValue};
 use std::collections::BTreeMap;
-
 use super::types::FunctionParametersType;
 
 #[derive(Debug, Clone, Default)]
