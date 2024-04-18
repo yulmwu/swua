@@ -31,12 +31,26 @@ pub fn setup_builtins(environment: &mut Environment) {
     );
 }
 
+/// implementation `print` (print_82c34a9dde377ee6)
 pub struct Print;
 
 impl Buildin for Print {
     fn call(&self, args: Vec<Value>, _: &mut Environment) -> Result<Value, InterpretError> {
         for arg in args {
-            print!("{arg}");
+            print!("{}", arg);
+        }
+        println!();
+        Ok(Value::Int(0))
+    }
+}
+
+/// implementation `print_float` (print_float_6c87b26222079ccc)
+pub struct PrintFloat;
+
+impl Buildin for PrintFloat {
+    fn call(&self, args: Vec<Value>, _: &mut Environment) -> Result<Value, InterpretError> {
+        for arg in args {
+            print!("{}", arg);
         }
         println!();
         Ok(Value::Int(0))

@@ -79,21 +79,6 @@ impl Interpreter {
         Ok(None)
     }
 
-    /*
-
-    Literal(Literal),
-    Binary(BinaryExpression),
-    Unary(UnaryExpression),
-    Assign(AssignExpression),
-    Call(CallExpression),
-    Index(IndexExpression),
-    Typeof(TypeofExpression),
-    Sizeof(SizeofExpression),
-    Cast(CastExpression),
-    Pointer(PointerExpression),
-    Dereference(DereferenceExpression),
-    Ternary(TernaryExpression), */
-
     pub fn interpret_expression(&mut self, expression: &Expression) -> InterpretResult<Value> {
         match expression {
             Expression::Literal(literal) => self.interpret_literal(literal),
