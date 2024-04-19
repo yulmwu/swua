@@ -1,5 +1,7 @@
 <div align="center">
 
+This project is being rewritten source code. Check the old version of the source code in the [`old` branch](https://github.com/yulmwu/swua/tree/old)
+
 # Swua Programming Language
 
 ### Small, insignificant programming language 😃
